@@ -17,7 +17,42 @@ namespace System.Security.Cryptography {
     ///     Wrapper for NCrypt's implementation of elliptic curve DSA
     /// </summary>
     [System.Security.Permissions.HostProtection(MayLeakOnAbort = true)]
-    public sealed class ECDsaCng : ECDsa {
+    public sealed partial class ECDsaCng : ECDsa {
+#if MONO
+        public ECDsaCng() : this(521) {
+        }
+
+        public ECDsaCng(int keySize) {
+            throw new NotImplementedException ();
+        }
+
+        [SecuritySafeCritical]
+        public ECDsaCng(CngKey key) {
+            throw new NotImplementedException ();
+        }
+
+        public ECDsaCng(ECCurve curve) {
+            throw new NotImplementedException ();
+        }
+
+        public CngKey Key {
+            get {
+                throw new NotImplementedException ();
+            }
+
+            private set {
+                throw new NotImplementedException ();
+            }
+        }
+
+        public override byte[] SignHash(byte[] hash) {
+            throw new NotImplementedException();
+        }
+
+        public override bool VerifyHash(byte[] hash, byte[] signature) {
+            throw new NotImplementedException();
+        }
+#else
         private static KeySizes[] s_legalKeySizes = new KeySizes[] { new KeySizes(256, 384, 128), new KeySizes(521, 521, 0) };
 
         private CngKey m_key;
@@ -42,15 +77,20 @@ namespace System.Security.Cryptography {
             KeySize = keySize;
         }
 
+        public ECDsaCng(ECCurve curve) {
+            // GenerateKey will already do all of the validation we need.
+            GenerateKey(curve);
+        }
+
         [SecuritySafeCritical]
         public ECDsaCng(CngKey key) {
             Contract.Ensures(LegalKeySizesValue != null);
-            Contract.Ensures(m_key != null && m_key.AlgorithmGroup == CngAlgorithmGroup.ECDsa);
+            Contract.Ensures(m_key != null && IsEccAlgorithmGroup(m_key.AlgorithmGroup));
 
             if (key == null) {
                 throw new ArgumentNullException("key");
             }
-            if (key.AlgorithmGroup != CngAlgorithmGroup.ECDsa) {
+            if (!IsEccAlgorithmGroup(key.AlgorithmGroup)) {
                 throw new ArgumentException(SR.GetString(SR.Cryptography_ArgECDsaRequiresECDsaKey), "key");
             }
 
@@ -74,7 +114,21 @@ namespace System.Security.Cryptography {
             }
             CodeAccessPermission.RevertAssert();
 
-            KeySize = m_key.KeySize;
+            // Our LegalKeySizes value stores the values that we encoded as being the correct
+            // legal key size limitations for this algorithm, as documented on MSDN.
+            //
+            // But on a new OS version we might not question if our limit is accurate, or MSDN
+            // could have been innacurate to start with.
+            //
+            // Since the key is already loaded, we know that Windows thought it to be valid;
+            // therefore we should set KeySizeValue directly to bypass the LegalKeySizes conformance
+            // check.
+            //
+            // For RSA there are known cases where this change matters. RSACryptoServiceProvider can
+            // create a 384-bit RSA key, which we consider too small to be legal. It can also create
+            // a 1032-bit RSA key, which we consider illegal because it doesn't match our 64-bit
+            // alignment requirement. (In both cases Windows loads it just fine)
+            KeySizeValue = m_key.KeySize;
         }
 
         /// <summary>
@@ -103,8 +157,8 @@ namespace System.Security.Cryptography {
         public CngKey Key {
             get {
                 Contract.Ensures(Contract.Result<CngKey>() != null);
-                Contract.Ensures(Contract.Result<CngKey>().AlgorithmGroup == CngAlgorithmGroup.ECDsa);
-                Contract.Ensures(m_key != null && m_key.AlgorithmGroup == CngAlgorithmGroup.ECDsa);
+                Contract.Ensures(IsEccAlgorithmGroup(Contract.Result<CngKey>().AlgorithmGroup));
+                Contract.Ensures(m_key != null && IsEccAlgorithmGroup(m_key.AlgorithmGroup));
 
                 // If the size of the key no longer matches our stored value, then we need to replace it with
                 // a new key of the correct size.
@@ -142,9 +196,9 @@ namespace System.Security.Cryptography {
 
             private set {
                 Contract.Requires(value != null);
-                Contract.Ensures(m_key != null && m_key.AlgorithmGroup == CngAlgorithmGroup.ECDsa);
+                Contract.Ensures(m_key != null && IsEccAlgorithmGroup(m_key.AlgorithmGroup));
 
-                if (value.AlgorithmGroup != CngAlgorithmGroup.ECDsa) {
+                if (!IsEccAlgorithmGroup(value.AlgorithmGroup)) {
                     throw new ArgumentException(SR.GetString(SR.Cryptography_ArgECDsaRequiresECDsaKey));
                 }
 
@@ -159,7 +213,22 @@ namespace System.Security.Cryptography {
                 //
 
                 m_key = value;
-                KeySize = m_key.KeySize;
+
+                // Our LegalKeySizes value stores the values that we encoded as being the correct
+                // legal key size limitations for this algorithm, as documented on MSDN.
+                //
+                // But on a new OS version we might not question if our limit is accurate, or MSDN
+                // could have been innacurate to start with.
+                //
+                // Since the key is already loaded, we know that Windows thought it to be valid;
+                // therefore we should set KeySizeValue directly to bypass the LegalKeySizes conformance
+                // check.
+                //
+                // For RSA there are known cases where this change matters. RSACryptoServiceProvider can
+                // create a 384-bit RSA key, which we consider too small to be legal. It can also create
+                // a 1032-bit RSA key, which we consider illegal because it doesn't match our 64-bit
+                // alignment requirement. (In both cases Windows loads it just fine)
+                KeySizeValue = m_key.KeySize;
             }
         }
 
@@ -202,7 +271,13 @@ namespace System.Security.Cryptography {
                 throw new ArgumentOutOfRangeException("format");
             }
 
-            Key = Rfc4050KeyFormatter.FromXml(xml);
+            bool isEcdh;
+            ECParameters parameters = Rfc4050KeyFormatter.FromXml(xml, out isEcdh);
+
+            // .NET 4.6.2 allowed ECDsaCng to wrap ECDH keys because of interop with non-Windows PFX files.
+            // As a result XML marked as ECDiffieHellman loaded just fine, so no check should be done on the
+            // key type.
+            ImportParameters(parameters);
         }
 
         //
@@ -300,7 +375,8 @@ namespace System.Security.Cryptography {
                 throw new ArgumentOutOfRangeException("format");
             }
 
-            return Rfc4050KeyFormatter.ToXml(Key);
+            ECParameters ecParams = ExportParameters(false);
+            return Rfc4050KeyFormatter.ToXml(ecParams, isEcdh: false);
         }
 
         //
@@ -376,6 +452,19 @@ namespace System.Security.Cryptography {
             }
         }
 
+        public override void GenerateKey(ECCurve curve) {
+            curve.Validate();
+
+            if (m_key != null) {
+                m_key.Dispose();
+                m_key = null;
+            }
+
+            CngKey newKey = CngKey.Create(curve, name => CngKey.EcdsaCurveNameToAlgorithm(name));
+            m_key = newKey;
+            KeySizeValue = newKey.KeySize;
+        }
+
         /// <summary>
         ///     Helper property to get the NCrypt key handle
         /// </summary>
@@ -407,5 +496,16 @@ namespace System.Security.Cryptography {
                 return hasher.HashFinal();
             }
         }
+
+        private static bool IsEccAlgorithmGroup(CngAlgorithmGroup algorithmGroup)
+        {
+            // Sometimes, when reading from certificates, ECDSA keys get identified as ECDH.
+            // Windows allows the ECDH keys to perform both key exchange (ECDH) and signing (ECDSA),
+            // so either value is acceptable for the ECDSA wrapper object.
+            //
+            // It is worth noting, however, that ECDSA-identified keys cannot be used for key exchange (ECDH) in CNG.
+            return algorithmGroup == CngAlgorithmGroup.ECDsa || algorithmGroup == CngAlgorithmGroup.ECDiffieHellman;
+        }
+#endif
     }
 }

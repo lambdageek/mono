@@ -1,5 +1,6 @@
-/*
- * mono-hwcap-ia64.c: Itanium hardware feature detection
+/**
+ * \file
+ * Itanium hardware feature detection
  *
  * Authors:
  *    Alex Rønne Petersen (alexrp@xamarin.com)
@@ -19,15 +20,9 @@
  * Licensed under the MIT license. See LICENSE file in the project root for full license information.
  */
 
-#include "mono/utils/mono-hwcap-ia64.h"
+#include "mono/utils/mono-hwcap.h"
 
 void
 mono_hwcap_arch_init (void)
-{
-	/* Nothing needed here yet. */
-}
-
-void
-mono_hwcap_print (FILE *f)
 {
 }

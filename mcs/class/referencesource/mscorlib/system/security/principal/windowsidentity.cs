@@ -3,7 +3,7 @@
 //   Copyright (c) Microsoft Corporation.  All rights reserved.
 // 
 // ==--==
-// <OWNER>[....]</OWNER>
+// <OWNER>Microsoft</OWNER>
 // 
 
 //
@@ -46,7 +46,7 @@ namespace System.Security.Principal
         Anonymous   = 3
     }
 
-    // Keep in [....] with vm\comprincipal.h
+    // Keep in sync with vm\comprincipal.h
     internal enum WinSecurityContext {
         Thread = 1, // OpenAsSelf = false
         Process = 2, // OpenAsSelf = true
@@ -609,6 +609,8 @@ namespace System.Security.Principal
         // Public methods.
         //
         [SecuritySafeCritical]
+        [DynamicSecurityMethodAttribute()]
+        [MethodImplAttribute(MethodImplOptions.NoInlining)] // Methods containing StackCrawlMark local var has to be marked non-inlineable
         public static void RunImpersonated(SafeAccessTokenHandle safeAccessTokenHandle, Action action)
         {
             if (action == null)
@@ -627,6 +629,8 @@ namespace System.Security.Principal
         }
 
         [SecuritySafeCritical]
+        [DynamicSecurityMethodAttribute()]
+        [MethodImplAttribute(MethodImplOptions.NoInlining)] // Methods containing StackCrawlMark local var has to be marked non-inlineable
         public static T RunImpersonated<T>(SafeAccessTokenHandle safeAccessTokenHandle, Func<T> func)
         {
             if (func == null)

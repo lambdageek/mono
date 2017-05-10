@@ -20,6 +20,7 @@
 // THE SOFTWARE.
 // 
 
+[assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.IdentityModel.Selectors.X509CertificateValidator))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.ActionNotSupportedException))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.ChannelFactory))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.ChannelFactory<>))]
@@ -136,6 +137,7 @@
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.MessageContractMemberAttribute))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.MessageCredentialType))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.MessageHeader<>))]
+[assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.MessageHeaderAttribute))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.MessageHeaderException))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.MessageParameterAttribute))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.OperationContext))]
@@ -149,6 +151,10 @@
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.Security.SecurityAccessDeniedException))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.Security.UserNamePasswordClientCredential))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.Security.WindowsClientCredential))]
+[assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.Security.X509ServiceCertificateAuthentication))]
+[assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.Security.X509CertificateInitiatorClientCredential))]
+[assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.Security.X509CertificateRecipientClientCredential))]
+[assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.Security.X509CertificateValidationMode))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.SecurityMode))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.ServerTooBusyException))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.ServiceActivationException))]
@@ -157,4 +163,3 @@
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.TransferMode))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.UnknownMessageReceivedEventArgs))]
 [assembly: System.Runtime.CompilerServices.TypeForwardedToAttribute(typeof(System.ServiceModel.XmlSerializerFormatAttribute))]
-

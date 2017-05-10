@@ -60,6 +60,11 @@ namespace System.Security.Cryptography {
             KeySize = keySize;
         }
 
+        public ECDiffieHellmanCng(ECCurve curve) {
+            // GenerateKey will already do all of the validation we need.
+            GenerateKey(curve);
+        }
+
         [SecuritySafeCritical]
         public ECDiffieHellmanCng(CngKey key) {
             Contract.Ensures(LegalKeySizesValue != null);
@@ -93,7 +98,21 @@ namespace System.Security.Cryptography {
             }
             CodeAccessPermission.RevertAssert();
 
-            KeySize = m_key.KeySize;
+            // Our LegalKeySizes value stores the values that we encoded as being the correct
+            // legal key size limitations for this algorithm, as documented on MSDN.
+            //
+            // But on a new OS version we might not question if our limit is accurate, or MSDN
+            // could have been innacurate to start with.
+            //
+            // Since the key is already loaded, we know that Windows thought it to be valid;
+            // therefore we should set KeySizeValue directly to bypass the LegalKeySizes conformance
+            // check.
+            //
+            // For RSA there are known cases where this change matters. RSACryptoServiceProvider can
+            // create a 384-bit RSA key, which we consider too small to be legal. It can also create
+            // a 1032-bit RSA key, which we consider illegal because it doesn't match our 64-bit
+            // alignment requirement. (In both cases Windows loads it just fine)
+            KeySizeValue = m_key.KeySize;
         }
 
         /// <summary>
@@ -247,7 +266,22 @@ namespace System.Security.Cryptography {
                 //
 
                 m_key = value;
-                KeySize = m_key.KeySize;
+
+                // Our LegalKeySizes value stores the values that we encoded as being the correct
+                // legal key size limitations for this algorithm, as documented on MSDN.
+                //
+                // But on a new OS version we might not question if our limit is accurate, or MSDN
+                // could have been innacurate to start with.
+                //
+                // Since the key is already loaded, we know that Windows thought it to be valid;
+                // therefore we should set KeySizeValue directly to bypass the LegalKeySizes conformance
+                // check.
+                //
+                // For RSA there are known cases where this change matters. RSACryptoServiceProvider can
+                // create a 384-bit RSA key, which we consider too small to be legal. It can also create
+                // a 1032-bit RSA key, which we consider illegal because it doesn't match our 64-bit
+                // alignment requirement. (In both cases Windows loads it just fine)
+                KeySizeValue = m_key.KeySize;
             }
         }
 
@@ -257,7 +291,7 @@ namespace System.Security.Cryptography {
         public override ECDiffieHellmanPublicKey PublicKey {
             get {
                 Contract.Ensures(Contract.Result<ECDiffieHellmanPublicKey>() != null);
-                return new ECDiffieHellmanCngPublicKey(Key);
+                return ECDiffieHellmanCngPublicKey.FromKey(Key);
             }
         }
 
@@ -369,6 +403,84 @@ namespace System.Security.Cryptography {
             }
         }
 
+        [SecuritySafeCritical]
+        public override byte[] DeriveKeyFromHash(
+            ECDiffieHellmanPublicKey otherPartyPublicKey,
+            HashAlgorithmName hashAlgorithm,
+            byte[] secretPrepend,
+            byte[] secretAppend)
+        {
+            Contract.Ensures(Contract.Result<byte[]>() != null);
+
+            if (otherPartyPublicKey == null)
+                throw new ArgumentNullException("otherPartyPublicKey");
+            if (string.IsNullOrEmpty(hashAlgorithm.Name))
+                throw new ArgumentException(SR.GetString(SR.Cryptography_HashAlgorithmNameNullOrEmpty), "hashAlgorithm");
+
+            using (SafeNCryptSecretHandle secretAgreement = DeriveSecretAgreementHandle(otherPartyPublicKey))
+            {
+                return NCryptNative.DeriveKeyMaterialHash(
+                    secretAgreement,
+                    hashAlgorithm.Name, 
+                    secretPrepend,
+                    secretAppend,
+                    NCryptNative.SecretAgreementFlags.None);
+            }
+        }
+
+        [SecuritySafeCritical]
+        public override byte[] DeriveKeyFromHmac(
+            ECDiffieHellmanPublicKey otherPartyPublicKey,
+            HashAlgorithmName hashAlgorithm,
+            byte[] hmacKey,
+            byte[] secretPrepend,
+            byte[] secretAppend)
+        {
+            Contract.Ensures(Contract.Result<byte[]>() != null);
+
+            if (otherPartyPublicKey == null)
+                throw new ArgumentNullException("otherPartyPublicKey");
+            if (string.IsNullOrEmpty(hashAlgorithm.Name))
+                throw new ArgumentException(SR.GetString(SR.Cryptography_HashAlgorithmNameNullOrEmpty), "hashAlgorithm");
+
+            using (SafeNCryptSecretHandle secretAgreement = DeriveSecretAgreementHandle(otherPartyPublicKey))
+            {
+                NCryptNative.SecretAgreementFlags flags = hmacKey == null ?
+                    NCryptNative.SecretAgreementFlags.UseSecretAsHmacKey :
+                    NCryptNative.SecretAgreementFlags.None;
+
+                return NCryptNative.DeriveKeyMaterialHmac(
+                    secretAgreement,
+                    hashAlgorithm.Name,
+                    hmacKey,
+                    secretPrepend,
+                    secretAppend,
+                    flags);
+            }
+        }
+
+        [SecuritySafeCritical]
+        public override byte[] DeriveKeyTls(ECDiffieHellmanPublicKey otherPartyPublicKey, byte[] prfLabel, byte[] prfSeed)
+        {
+            Contract.Ensures(Contract.Result<byte[]>() != null);
+
+            if (otherPartyPublicKey == null)
+                throw new ArgumentNullException("otherPartyPublicKey");
+            if (prfLabel == null)
+                throw new ArgumentNullException("prfLabel");
+            if (prfSeed == null)
+                throw new ArgumentNullException("prfSeed");
+
+            using (SafeNCryptSecretHandle secretAgreement = DeriveSecretAgreementHandle(otherPartyPublicKey))
+            {
+                return NCryptNative.DeriveKeyMaterialTls(
+                    secretAgreement,
+                    prfLabel,
+                    prfSeed,
+                    NCryptNative.SecretAgreementFlags.None);
+            }
+        }
+
         /// <summary>
         ///     Get a handle to the secret agreement generated between two parties
         /// </summary>
@@ -427,6 +539,19 @@ namespace System.Security.Cryptography {
             }
         }
 
+        public override void GenerateKey(ECCurve curve) {
+            curve.Validate();
+
+            if (m_key != null) {
+                m_key.Dispose();
+                m_key = null;
+            }
+
+            CngKey newKey = CngKey.Create(curve, name => CngKey.EcdhCurveNameToAlgorithm(name));
+            m_key = newKey;
+            KeySizeValue = newKey.KeySize;
+        }
+
         //
         // XML Import
         //
@@ -447,7 +572,14 @@ namespace System.Security.Cryptography {
                 throw new ArgumentOutOfRangeException("format");
             }
 
-            Key = Rfc4050KeyFormatter.FromXml(xml);
+            bool isEcdh;
+            ECParameters ecParams = Rfc4050KeyFormatter.FromXml(xml, out isEcdh);
+
+            if (!isEcdh) {
+                throw new ArgumentException(SR.GetString(SR.Cryptography_ArgECDHRequiresECDHKey), "xml");
+            }
+
+            ImportParameters(ecParams);
         }
 
         //
@@ -469,7 +601,54 @@ namespace System.Security.Cryptography {
                 throw new ArgumentOutOfRangeException("format");
             }
 
-            return Rfc4050KeyFormatter.ToXml(Key);
+            ECParameters ecParams = ExportParameters(false);
+            return Rfc4050KeyFormatter.ToXml(ecParams, isEcdh: true);
+        }
+
+        /// <summary>
+        ///  ImportParameters will replace the existing key that this object is working with by creating a
+        ///  new CngKey. If the parameters contains only Q, then only a public key will be imported.
+        ///  If the parameters also contains D, then a full key pair will be imported. 
+        ///  The parameters Curve value specifies the type of the curve to import.
+        /// </summary>
+        /// <exception cref="CryptographicException">
+        ///  if <paramref name="parameters" /> does not contain valid values.
+        /// </exception>
+        /// <exception cref="NotSupportedException">
+        ///  if <paramref name="parameters" /> references a curve that cannot be imported.
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///  if <paramref name="parameters" /> references a curve that is not supported by this platform.
+        /// </exception>
+        public override void ImportParameters(ECParameters parameters) {
+            Key = ECCng.ImportEcdhParameters(ref parameters);
+        }
+
+        /// <summary>
+        ///  Exports the key and explicit curve parameters used by the ECC object into an <see cref="ECParameters"/> object.
+        /// </summary>
+        /// <exception cref="CryptographicException">
+        ///  if there was an issue obtaining the curve values.
+        /// </exception>
+        /// <exception cref="PlatformNotSupportedException">
+        ///  if explicit export is not supported by this platform. Windows 10 or higher is required.
+        /// </exception>
+        /// <returns>The key and explicit curve parameters used by the ECC object.</returns>
+        public override ECParameters ExportExplicitParameters(bool includePrivateParameters) {
+            return ECCng.ExportExplicitParameters(Key, includePrivateParameters);
+        }
+
+        /// <summary>
+        ///  Exports the key used by the ECC object into an <see cref="ECParameters"/> object.
+        ///  If the key was created as a named curve, the Curve property will contain named curve parameters
+        ///  otherwise it will contain explicit parameters.
+        /// </summary>
+        /// <exception cref="CryptographicException">
+        ///  if there was an issue obtaining the curve values.
+        /// </exception>
+        /// <returns>The key and named curve parameters used by the ECC object.</returns>
+        public override ECParameters ExportParameters(bool includePrivateParameters) {
+            return ECCng.ExportParameters(Key, includePrivateParameters);
         }
     }
 }

@@ -2,8 +2,8 @@
 // <copyright file="TdsEnums.cs" company="Microsoft">
 //     Copyright (c) Microsoft Corporation.  All rights reserved.
 // </copyright>
-// <owner current="true" primary="true">[....]</owner>
-// <owner current="true" primary="false">[....]</owner>
+// <owner current="true" primary="true">Microsoft</owner>
+// <owner current="true" primary="false">Microsoft</owner>
 //------------------------------------------------------------------------------
 
 namespace System.Data.SqlClient {
@@ -543,6 +543,9 @@ namespace System.Data.SqlClient {
         public const int PASSWORD_EXPIRED = 18488;
         public const int IMPERSONATION_FAILED = 1346;
         public const int P_TOKENTOOLONG = 103;
+
+        // SQL error that indicates retry for Always Encrypted
+        public const int TCE_CONVERSION_ERROR_CLIENT_RETRY = 33514;
 
         // SNI\Win32 error values
         // NOTE: these are simply windows system error codes, not SNI specific

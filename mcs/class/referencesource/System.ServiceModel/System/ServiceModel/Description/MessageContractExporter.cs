@@ -511,7 +511,7 @@ namespace System.ServiceModel.Description
                 string operationName = contractContext.GetOperation(operation).Name;
 
                 string callbackString = operation.IsServerInitiated() ? "Callback" : string.Empty;
-                // [....]: composing names have potential problem of generating name that looks like an encoded name, consider avoiding '_'
+                // Microsoft: composing names have potential problem of generating name that looks like an encoded name, consider avoiding '_'
                 if (messageDescription.Direction == MessageDirection.Input)
                     messageNameBase = string.Format(System.Globalization.CultureInfo.InvariantCulture,
                                         "{0}_{1}_Input{2}Message", portTypeName, operationName, callbackString);
@@ -539,7 +539,7 @@ namespace System.ServiceModel.Description
         {
             string portTypeName = contractContext.WsdlPortType.Name;
             string operationName = contractContext.GetOperation(operation).Name;
-            // [....]: composing names have potential problem of generating name that looks like an encoded name, consider avoiding '_'
+            // Microsoft: composing names have potential problem of generating name that looks like an encoded name, consider avoiding '_'
             string faultNameBase = String.Format(System.Globalization.CultureInfo.InvariantCulture, "{0}_{1}_{2}_FaultMessage", portTypeName, operationName, faultName);
 
             WsdlNS.ServiceDescription wsdl = contractContext.WsdlPortType.ServiceDescription;
@@ -1347,31 +1347,38 @@ namespace System.ServiceModel.Description
 
         internal static XmlSchema CreateWsdl()
         {
-            return XmlSchema.Read(new StringReader(wsdl), null);
+            StringReader reader = new StringReader(wsdl);
+            return XmlSchema.Read(new XmlTextReader(reader) { DtdProcessing = DtdProcessing.Prohibit }, null);
         }
+
         internal static XmlSchema CreateSoap()
         {
-            return XmlSchema.Read(new StringReader(soap), null);
+            StringReader reader = new StringReader(soap);
+            return XmlSchema.Read(new XmlTextReader(reader) { DtdProcessing = DtdProcessing.Prohibit }, null);
         }
 
         internal static XmlSchema CreateSoapEncoding()
         {
-            return XmlSchema.Read(new StringReader(soapEncoding), null);
+            StringReader reader = new StringReader(soapEncoding);
+            return XmlSchema.Read(new XmlTextReader(reader) { DtdProcessing = DtdProcessing.Prohibit }, null);
         }
 
         internal static XmlSchema CreateFakeSoapEncoding()
         {
-            return XmlSchema.Read(new StringReader(fakeSoapEncoding), null);
+            StringReader reader = new StringReader(fakeSoapEncoding);
+            return XmlSchema.Read(new XmlTextReader(reader) { DtdProcessing = DtdProcessing.Prohibit }, null);
         }
 
         internal static XmlSchema CreateFakeXsdSchema()
         {
-            return XmlSchema.Read(new StringReader(fakeXsd), null);
+            StringReader reader = new StringReader(fakeXsd);
+            return XmlSchema.Read(new XmlTextReader(reader) { DtdProcessing = DtdProcessing.Prohibit }, null);
         }
 
         internal static XmlSchema CreateFakeXmlSchema()
         {
-            return XmlSchema.Read(new StringReader(fakeXmlSchema), null);
+            StringReader reader = new StringReader(fakeXmlSchema);
+            return XmlSchema.Read(new XmlTextReader(reader) { DtdProcessing = DtdProcessing.Prohibit }, null);
         }
 
         internal static bool IsKnownSchema(string ns)

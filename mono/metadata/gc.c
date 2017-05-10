@@ -1,5 +1,6 @@
-/*
- * metadata/gc.c: GC icalls.
+/**
+ * \file
+ * GC icalls.
  *
  * Author: Paolo Molaro <lupus@ximian.com>
  *
@@ -24,11 +25,10 @@
 #include <mono/metadata/metadata-internals.h>
 #include <mono/metadata/mono-mlist.h>
 #include <mono/metadata/threads-types.h>
-#include <mono/metadata/threadpool-ms.h>
+#include <mono/metadata/threadpool.h>
 #include <mono/sgen/sgen-conf.h>
 #include <mono/sgen/sgen-gc.h>
 #include <mono/utils/mono-logger-internals.h>
-#include <mono/metadata/gc-internals.h>
 #include <mono/metadata/marshal.h> /* for mono_delegate_free_ftnptr () */
 #include <mono/metadata/attach.h>
 #include <mono/metadata/console-io.h>
@@ -42,31 +42,33 @@
 #include <mono/utils/atomic.h>
 #include <mono/utils/mono-coop-semaphore.h>
 #include <mono/utils/hazard-pointer.h>
+#include <mono/utils/w32api.h>
 
 #ifndef HOST_WIN32
 #include <pthread.h>
 #endif
 
 typedef struct DomainFinalizationReq {
+	gint32 ref;
 	MonoDomain *domain;
-	HANDLE done_event;
+	MonoCoopSem done;
 } DomainFinalizationReq;
 
-static gboolean gc_disabled = FALSE;
+static gboolean gc_disabled;
 
-static gboolean finalizing_root_domain = FALSE;
+static gboolean finalizing_root_domain;
 
-gboolean log_finalizers = FALSE;
-gboolean mono_do_not_finalize = FALSE;
-gchar **mono_do_not_finalize_class_names = NULL;
+gboolean log_finalizers;
+gboolean mono_do_not_finalize;
+volatile gboolean suspend_finalizers;
+gchar **mono_do_not_finalize_class_names ;
 
 #define mono_finalizer_lock() mono_coop_mutex_lock (&finalizer_mutex)
 #define mono_finalizer_unlock() mono_coop_mutex_unlock (&finalizer_mutex)
 static MonoCoopMutex finalizer_mutex;
 static MonoCoopMutex reference_queue_mutex;
 
-static GSList *domains_to_finalize= NULL;
-static MonoMList *threads_to_finalize = NULL;
+static GSList *domains_to_finalize;
 
 static gboolean finalizer_thread_exited;
 /* Uses finalizer_mutex */
@@ -74,38 +76,87 @@ static MonoCoopCond exited_cond;
 
 static MonoInternalThread *gc_thread;
 
+#ifdef TARGET_WIN32
+static HANDLE pending_done_event;
+#else
+static gboolean pending_done;
+static MonoCoopCond pending_done_cond;
+static MonoCoopMutex pending_done_mutex;
+#endif
+
 static void object_register_finalizer (MonoObject *obj, void (*callback)(void *, void*));
 
 static void reference_queue_proccess_all (void);
 static void mono_reference_queue_cleanup (void);
 static void reference_queue_clear_for_domain (MonoDomain *domain);
-static HANDLE pending_done_event;
 
-static guint32
-guarded_wait (HANDLE handle, guint32 timeout, gboolean alertable)
+
+static MonoThreadInfoWaitRet
+guarded_wait (MonoThreadHandle *thread_handle, guint32 timeout, gboolean alertable)
 {
-	guint32 result;
+	MonoThreadInfoWaitRet result;
 
 	MONO_ENTER_GC_SAFE;
-	result = WaitForSingleObjectEx (handle, timeout, alertable);
+	result = mono_thread_info_wait_one_handle (thread_handle, timeout, alertable);
 	MONO_EXIT_GC_SAFE;
 
 	return result;
 }
 
-static gboolean
-add_thread_to_finalize (MonoInternalThread *thread, MonoError *error)
+typedef struct {
+	MonoCoopCond *cond;
+	MonoCoopMutex *mutex;
+} BreakCoopAlertableWaitUD;
+
+static inline void
+break_coop_alertable_wait (gpointer user_data)
 {
-	mono_error_init (error);
-	mono_finalizer_lock ();
-	if (!threads_to_finalize)
-		MONO_GC_REGISTER_ROOT_SINGLE (threads_to_finalize, MONO_ROOT_SOURCE_FINALIZER_QUEUE, "finalizable threads list");
-	threads_to_finalize = mono_mlist_append_checked (threads_to_finalize, (MonoObject*)thread, error);
-	mono_finalizer_unlock ();
-	return is_ok (error);
+	BreakCoopAlertableWaitUD *ud = (BreakCoopAlertableWaitUD*)user_data;
+
+	mono_coop_mutex_lock (ud->mutex);
+	mono_coop_cond_signal (ud->cond);
+	mono_coop_mutex_unlock (ud->mutex);
+
+	g_free (ud);
 }
 
-static gboolean suspend_finalizers = FALSE;
+/*
+ * coop_cond_timedwait_alertable:
+ *
+ *   Wait on COND/MUTEX. If ALERTABLE is non-null, the wait can be interrupted.
+ * In that case, *ALERTABLE will be set to TRUE, and 0 is returned.
+ */
+static inline gint
+coop_cond_timedwait_alertable (MonoCoopCond *cond, MonoCoopMutex *mutex, guint32 timeout_ms, gboolean *alertable)
+{
+	BreakCoopAlertableWaitUD *ud;
+	int res;
+
+	if (alertable) {
+		ud = g_new0 (BreakCoopAlertableWaitUD, 1);
+		ud->cond = cond;
+		ud->mutex = mutex;
+
+		mono_thread_info_install_interrupt (break_coop_alertable_wait, ud, alertable);
+		if (*alertable) {
+			g_free (ud);
+			return 0;
+		}
+	}
+	res = mono_coop_cond_timedwait (cond, mutex, timeout_ms);
+	if (alertable) {
+		mono_thread_info_uninstall_interrupt (alertable);
+		if (*alertable)
+			return 0;
+		else {
+			/* the interrupt token has not been taken by another
+			 * thread, so it's our responsability to free it up. */
+			g_free (ud);
+		}
+	}
+	return res;
+}
+
 /* 
  * actually, we might want to queue the finalize requests in a separate thread,
  * but we need to be careful about the execution domain of the thread...
@@ -178,15 +229,6 @@ mono_gc_run_finalize (void *obj, void *data)
 		if (mono_gc_is_finalizer_internal_thread (t))
 			/* Avoid finalizing ourselves */
 			return;
-
-		if (t->threadpool_thread && finalizing_root_domain) {
-			/* Don't finalize threadpool threads when
-			   shutting down - they're finalized when the
-			   threadpool shuts down. */
-			if (!add_thread_to_finalize (t, &error))
-				goto unhandled_error;
-			return;
-		}
 	}
 
 	if (o->vtable->klass->image == mono_defaults.corlib && !strcmp (o->vtable->klass->name, "DynamicMethod") && finalizing_root_domain) {
@@ -263,7 +305,11 @@ mono_gc_run_finalize (void *obj, void *data)
 	if (log_finalizers)
 		g_log ("mono-gc-finalizers", G_LOG_LEVEL_MESSAGE, "<%s at %p> Calling finalizer.", o->vtable->klass->name, o);
 
+	mono_profiler_gc_finalize_object_begin (o);
+
 	runtime_invoke (o, NULL, &exc, NULL);
+
+	mono_profiler_gc_finalize_object_end (o);
 
 	if (log_finalizers)
 		g_log ("mono-gc-finalizers", G_LOG_LEVEL_MESSAGE, "<%s at %p> Returned from finalizer.", o->vtable->klass->name, o);
@@ -275,22 +321,6 @@ unhandled_error:
 		mono_thread_internal_unhandled_exception (exc);
 
 	mono_domain_set_internal (caller_domain);
-}
-
-void
-mono_gc_finalize_threadpool_threads (void)
-{
-	while (threads_to_finalize) {
-		MonoInternalThread *thread = (MonoInternalThread*) mono_mlist_get_data (threads_to_finalize);
-
-		/* Force finalization of the thread. */
-		thread->threadpool_thread = FALSE;
-		mono_object_register_finalizer ((MonoObject*)thread);
-
-		mono_gc_run_finalize (thread, NULL);
-
-		threads_to_finalize = mono_mlist_next (threads_to_finalize);
-	}
 }
 
 gpointer
@@ -354,9 +384,9 @@ object_register_finalizer (MonoObject *obj, void (*callback)(void *, void*))
 
 /**
  * mono_object_register_finalizer:
- * @obj: object to register
+ * \param obj object to register
  *
- * Records that object @obj has a finalizer, this will call the
+ * Records that object \p obj has a finalizer, this will call the
  * Finalize method when the garbage collector disposes the object.
  * 
  */
@@ -369,22 +399,22 @@ mono_object_register_finalizer (MonoObject *obj)
 
 /**
  * mono_domain_finalize:
- * @domain: the domain to finalize
- * @timeout: msects to wait for the finalization to complete, -1 to wait indefinitely
+ * \param domain the domain to finalize
+ * \param timeout msecs to wait for the finalization to complete, \c -1 to wait indefinitely
  *
- *  Request finalization of all finalizable objects inside @domain. Wait
- * @timeout msecs for the finalization to complete.
+ * Request finalization of all finalizable objects inside \p domain. Wait
+ * \p timeout msecs for the finalization to complete.
  *
- * Returns: TRUE if succeeded, FALSE if there was a timeout
+ * \returns TRUE if succeeded, FALSE if there was a timeout
  */
-
 gboolean
 mono_domain_finalize (MonoDomain *domain, guint32 timeout) 
 {
 	DomainFinalizationReq *req;
-	guint32 res;
-	HANDLE done_event;
 	MonoInternalThread *thread = mono_thread_internal_current ();
+	gint res;
+	gboolean ret;
+	gint64 start;
 
 #if defined(__native_client__)
 	return FALSE;
@@ -408,14 +438,10 @@ mono_domain_finalize (MonoDomain *domain, guint32 timeout)
 
 	mono_gc_collect (mono_gc_max_generation ());
 
-	done_event = CreateEvent (NULL, TRUE, FALSE, NULL);
-	if (done_event == NULL) {
-		return FALSE;
-	}
-
 	req = g_new0 (DomainFinalizationReq, 1);
+	req->ref = 2;
 	req->domain = domain;
-	req->done_event = done_event;
+	mono_coop_sem_init (&req->done, 0);
 
 	if (domain == mono_get_root_domain ())
 		finalizing_root_domain = TRUE;
@@ -430,33 +456,74 @@ mono_domain_finalize (MonoDomain *domain, guint32 timeout)
 	mono_gc_finalize_notify ();
 
 	if (timeout == -1)
-		timeout = INFINITE;
+		timeout = MONO_INFINITE_WAIT;
+	if (timeout != MONO_INFINITE_WAIT)
+		start = mono_msec_ticks ();
 
-	while (TRUE) {
-		res = guarded_wait (done_event, timeout, TRUE);
-		/* printf ("WAIT RES: %d.\n", res); */
+	ret = TRUE;
 
-		if (res == WAIT_IO_COMPLETION) {
-			if ((thread->state & (ThreadState_StopRequested | ThreadState_SuspendRequested)) != 0)
-				return FALSE;
-		} else if (res == WAIT_TIMEOUT) {
-			/* We leak the handle here */
-			return FALSE;
+	for (;;) {
+		if (timeout == MONO_INFINITE_WAIT) {
+			res = mono_coop_sem_wait (&req->done, MONO_SEM_FLAGS_ALERTABLE);
 		} else {
+			gint64 elapsed = mono_msec_ticks () - start;
+			if (elapsed >= timeout) {
+				ret = FALSE;
+				break;
+			}
+
+			res = mono_coop_sem_timedwait (&req->done, timeout - elapsed, MONO_SEM_FLAGS_ALERTABLE);
+		}
+
+		if (res == MONO_SEM_TIMEDWAIT_RET_SUCCESS) {
 			break;
+		} else if (res == MONO_SEM_TIMEDWAIT_RET_ALERTED) {
+			if ((thread->state & (ThreadState_AbortRequested | ThreadState_SuspendRequested)) != 0) {
+				ret = FALSE;
+				break;
+			}
+		} else if (res == MONO_SEM_TIMEDWAIT_RET_TIMEDOUT) {
+			ret = FALSE;
+			break;
+		} else {
+			g_error ("%s: unknown result %d", __func__, res);
 		}
 	}
 
-	CloseHandle (done_event);
+	if (!ret) {
+		/* Try removing the req from domains_to_finalize:
+		 *  - if it's not found: the domain is being finalized,
+		 *     so we the ref count is already decremented
+		 *  - if it's found: the domain is not yet being finalized,
+		 *     so we can safely decrement the ref */
 
-	if (domain == mono_get_root_domain ()) {
-		mono_threadpool_ms_cleanup ();
-		mono_gc_finalize_threadpool_threads ();
+		gboolean found;
+
+		mono_finalizer_lock ();
+
+		found = g_slist_index (domains_to_finalize, req) != -1;
+		if (found)
+			domains_to_finalize = g_slist_remove (domains_to_finalize, req);
+
+		mono_finalizer_unlock ();
+
+		if (found) {
+			/* We have to decrement it wherever we
+			 * remove it from domains_to_finalize */
+			if (InterlockedDecrement (&req->ref) != 1)
+				g_error ("%s: req->ref should be 1, as we are the first one to decrement it", __func__);
+		}
+
+		goto done;
 	}
 
-	mono_profiler_appdomain_event (domain, MONO_PROFILE_END_UNLOAD);
+done:
+	if (InterlockedDecrement (&req->ref) == 0) {
+		mono_coop_sem_destroy (&req->done);
+		g_free (req);
+	}
 
-	return TRUE;
+	return ret;
 }
 
 void
@@ -528,11 +595,26 @@ ves_icall_System_GC_WaitForPendingFinalizers (void)
 	if (gc_thread == NULL)
 		return;
 
+#ifdef TARGET_WIN32
 	ResetEvent (pending_done_event);
 	mono_gc_finalize_notify ();
 	/* g_print ("Waiting for pending finalizers....\n"); */
-	guarded_wait (pending_done_event, INFINITE, TRUE);
+	MONO_ENTER_GC_SAFE;
+	WaitForSingleObjectEx (pending_done_event, INFINITE, TRUE);
+	MONO_EXIT_GC_SAFE;
 	/* g_print ("Done pending....\n"); */
+#else
+	gboolean alerted = FALSE;
+	mono_coop_mutex_lock (&pending_done_mutex);
+	pending_done = FALSE;
+	mono_gc_finalize_notify ();
+	while (!pending_done) {
+		coop_cond_timedwait_alertable (&pending_done_cond, &pending_done_mutex, MONO_INFINITE_WAIT, &alerted);
+		if (alerted)
+			break;
+	}
+	mono_coop_mutex_unlock (&pending_done_mutex);
+#endif
 }
 
 void
@@ -607,7 +689,7 @@ ves_icall_System_GCHandle_GetAddrOfPinnedObject (guint32 handle)
 		} else {
 			/* the C# code will check and throw the exception */
 			/* FIXME: missing !klass->blittable test, see bug #61134 */
-			if ((klass->flags & TYPE_ATTRIBUTE_LAYOUT_MASK) == TYPE_ATTRIBUTE_AUTO_LAYOUT)
+			if (mono_class_is_auto_layout (klass))
 				return (gpointer)-1;
 			return (char*)obj + sizeof (MonoObject);
 		}
@@ -622,8 +704,14 @@ mono_gc_GCHandle_CheckCurrentDomain (guint32 gchandle)
 }
 
 static MonoCoopSem finalizer_sem;
-static volatile gboolean finished=FALSE;
+static volatile gboolean finished;
 
+/*
+ * mono_gc_finalize_notify:
+ *
+ *   Notify the finalizer thread that finalizers etc.
+ * are available to be processed.
+ */
 void
 mono_gc_finalize_notify (void)
 {
@@ -689,15 +777,24 @@ collect_objects (gpointer key, gpointer value, gpointer user_data)
  *  Run the finalizers of all finalizable objects in req->domain.
  */
 static void
-finalize_domain_objects (DomainFinalizationReq *req)
+finalize_domain_objects (void)
 {
-	MonoDomain *domain = req->domain;
+	DomainFinalizationReq *req = NULL;
+	MonoDomain *domain;
 
-#if HAVE_SGEN_GC
-#define NUM_FOBJECTS 64
-	MonoObject *to_finalize [NUM_FOBJECTS];
-	int count;
-#endif
+	if (domains_to_finalize) {
+		mono_finalizer_lock ();
+		if (domains_to_finalize) {
+			req = (DomainFinalizationReq *)domains_to_finalize->data;
+			domains_to_finalize = g_slist_remove (domains_to_finalize, req);
+		}
+		mono_finalizer_unlock ();
+	}
+
+	if (!req)
+		return;
+
+	domain = req->domain;
 
 	/* Process finalizers which are already in the queue */
 	mono_gc_invoke_finalizers ();
@@ -724,32 +821,34 @@ finalize_domain_objects (DomainFinalizationReq *req)
 		g_ptr_array_free (objs, TRUE);
 	}
 #elif defined(HAVE_SGEN_GC)
-	while ((count = mono_gc_finalizers_for_domain (domain, to_finalize, NUM_FOBJECTS))) {
-		int i;
-		for (i = 0; i < count; ++i) {
-			mono_gc_run_finalize (to_finalize [i], 0);
-		}
-	}
+	mono_gc_finalize_domain (domain);
+	mono_gc_invoke_finalizers ();
 #endif
 
 	/* cleanup the reference queue */
 	reference_queue_clear_for_domain (domain);
 	
 	/* printf ("DONE.\n"); */
-	SetEvent (req->done_event);
+	mono_coop_sem_post (&req->done);
 
-	/* The event is closed in mono_domain_finalize if we get here */
-	g_free (req);
+	if (InterlockedDecrement (&req->ref) == 0) {
+		/* mono_domain_finalize already returned, and
+		 * doesn't hold a reference to req anymore. */
+		mono_coop_sem_destroy (&req->done);
+		g_free (req);
+	}
 }
 
-static guint32
+static gsize WINAPI
 finalizer_thread (gpointer unused)
 {
 	MonoError error;
-	mono_thread_set_name_internal (mono_thread_internal_current (), mono_string_new (mono_get_root_domain (), "Finalizer"), FALSE, &error);
-	mono_error_assert_ok (&error);
-
 	gboolean wait = TRUE;
+
+	MonoString *finalizer = mono_string_new_checked (mono_get_root_domain (), "Finalizer", &error);
+	mono_error_assert_ok (&error);
+	mono_thread_set_name_internal (mono_thread_internal_current (), finalizer, FALSE, FALSE, &error);
+	mono_error_assert_ok (&error);
 
 	/* Register a hazard free queue pump callback */
 	mono_hazard_pointer_install_free_queue_size_callback (hazard_free_queue_is_too_big);
@@ -776,23 +875,16 @@ finalizer_thread (gpointer unused)
 
 		mono_attach_maybe_start ();
 
-		if (domains_to_finalize) {
-			mono_finalizer_lock ();
-			if (domains_to_finalize) {
-				DomainFinalizationReq *req = (DomainFinalizationReq *)domains_to_finalize->data;
-				domains_to_finalize = g_slist_remove (domains_to_finalize, req);
-				mono_finalizer_unlock ();
+		finalize_domain_objects ();
 
-				finalize_domain_objects (req);
-			} else {
-				mono_finalizer_unlock ();
-			}
-		}				
+		mono_profiler_gc_finalize_begin ();
 
 		/* If finished == TRUE, mono_gc_cleanup has been called (from mono_runtime_cleanup),
 		 * before the domain is unloaded.
 		 */
 		mono_gc_invoke_finalizers ();
+
+		mono_profiler_gc_finalize_end ();
 
 		mono_threads_join_threads ();
 
@@ -801,11 +893,18 @@ finalizer_thread (gpointer unused)
 		hazard_free_queue_pump ();
 
 		/* Avoid posting the pending done event until there are pending finalizers */
-		if (mono_coop_sem_timedwait (&finalizer_sem, 0, MONO_SEM_FLAGS_NONE) == 0) {
+		if (mono_coop_sem_timedwait (&finalizer_sem, 0, MONO_SEM_FLAGS_NONE) == MONO_SEM_TIMEDWAIT_RET_SUCCESS) {
 			/* Don't wait again at the start of the loop */
 			wait = FALSE;
 		} else {
+#ifdef TARGET_WIN32
 			SetEvent (pending_done_event);
+#else
+			mono_coop_mutex_lock (&pending_done_mutex);
+			pending_done = TRUE;
+			mono_coop_cond_signal (&pending_done_cond);
+			mono_coop_mutex_unlock (&pending_done_mutex);
+#endif
 		}
 	}
 
@@ -824,7 +923,7 @@ void
 mono_gc_init_finalizer_thread (void)
 {
 	MonoError error;
-	gc_thread = mono_thread_create_internal (mono_domain_get (), finalizer_thread, NULL, FALSE, 0, &error);
+	gc_thread = mono_thread_create_internal (mono_domain_get (), finalizer_thread, NULL, MONO_THREAD_CREATE_FLAGS_NONE, &error);
 	mono_error_assert_ok (&error);
 }
 
@@ -847,8 +946,14 @@ mono_gc_init (void)
 		return;
 	}
 
+#ifdef TARGET_WIN32
 	pending_done_event = CreateEvent (NULL, TRUE, FALSE, NULL);
 	g_assert (pending_done_event);
+#else
+	mono_coop_cond_init (&pending_done_cond);
+	mono_coop_mutex_init (&pending_done_mutex);
+#endif
+
 	mono_coop_cond_init (&exited_cond);
 	mono_coop_sem_init (&finalizer_sem, 0);
 
@@ -870,60 +975,60 @@ mono_gc_cleanup (void)
 	if (!gc_disabled) {
 		finished = TRUE;
 		if (mono_thread_internal_current () != gc_thread) {
-			gboolean timed_out = FALSE;
-			gint64 start_ticks = mono_msec_ticks ();
-			gint64 end_ticks = start_ticks + 2000;
+			int ret;
+			gint64 start;
+			const gint64 timeout = 40 * 1000;
 
 			mono_gc_finalize_notify ();
-			/* Finishing the finalizer thread, so wait a little bit... */
-			/* MS seems to wait for about 2 seconds */
-			while (!finalizer_thread_exited) {
-				gint64 current_ticks = mono_msec_ticks ();
-				guint32 timeout;
 
-				if (current_ticks >= end_ticks)
+			start = mono_msec_ticks ();
+
+			/* Finishing the finalizer thread, so wait a little bit... */
+			/* MS seems to wait for about 2 seconds per finalizer thread */
+			/* and 40 seconds for all finalizers to finish */
+			for (;;) {
+				gint64 elapsed;
+
+				if (finalizer_thread_exited) {
+					/* Wait for the thread to actually exit. We don't want the wait
+					 * to be alertable, because we assert on the result to be SUCCESS_0 */
+					ret = guarded_wait (gc_thread->handle, MONO_INFINITE_WAIT, FALSE);
+					g_assert (ret == MONO_THREAD_INFO_WAIT_RET_SUCCESS_0);
+
+					mono_thread_join (GUINT_TO_POINTER (gc_thread->tid));
 					break;
-				else
-					timeout = end_ticks - current_ticks;
+				}
+
+				elapsed = mono_msec_ticks () - start;
+				if (elapsed >= timeout) {
+					/* timeout */
+
+					/* Set a flag which the finalizer thread can check */
+					suspend_finalizers = TRUE;
+					mono_gc_suspend_finalizers ();
+
+					/* Try to abort the thread, in the hope that it is running managed code */
+					mono_thread_internal_abort (gc_thread);
+
+					/* Wait for it to stop */
+					ret = guarded_wait (gc_thread->handle, 100, FALSE);
+					if (ret == MONO_THREAD_INFO_WAIT_RET_TIMEOUT) {
+						/* The finalizer thread refused to exit, suspend it forever. */
+						mono_thread_internal_suspend_for_shutdown (gc_thread);
+						break;
+					}
+
+					g_assert (ret == MONO_THREAD_INFO_WAIT_RET_SUCCESS_0);
+
+					mono_thread_join (GUINT_TO_POINTER (gc_thread->tid));
+					break;
+				}
+
 				mono_finalizer_lock ();
 				if (!finalizer_thread_exited)
-					mono_coop_cond_timedwait (&exited_cond, &finalizer_mutex, timeout);
+					mono_coop_cond_timedwait (&exited_cond, &finalizer_mutex, timeout - elapsed);
 				mono_finalizer_unlock ();
 			}
-
-			if (!finalizer_thread_exited) {
-				int ret;
-
-				/* Set a flag which the finalizer thread can check */
-				suspend_finalizers = TRUE;
-
-				/* Try to abort the thread, in the hope that it is running managed code */
-				mono_thread_internal_stop (gc_thread);
-
-				/* Wait for it to stop */
-				ret = guarded_wait (gc_thread->handle, 100, TRUE);
-
-				if (ret == WAIT_TIMEOUT) {
-					/* 
-					 * The finalizer thread refused to die. There is not much we 
-					 * can do here, since the runtime is shutting down so the 
-					 * state the finalizer thread depends on will vanish.
-					 */
-					g_warning ("Shutting down finalizer thread timed out.");
-					timed_out = TRUE;
-				}
-			}
-
-			if (!timed_out) {
-				int ret;
-
-				/* Wait for the thread to actually exit */
-				ret = guarded_wait (gc_thread->handle, INFINITE, TRUE);
-				g_assert (ret == WAIT_OBJECT_0);
-
-				mono_thread_join (GUINT_TO_POINTER (gc_thread->tid));
-			}
-			g_assert (finalizer_thread_exited);
 		}
 		gc_thread = NULL;
 		mono_gc_base_cleanup ();
@@ -943,13 +1048,13 @@ mono_gc_is_finalizer_internal_thread (MonoInternalThread *thread)
 
 /**
  * mono_gc_is_finalizer_thread:
- * @thread: the thread to test.
+ * \param thread the thread to test.
  *
  * In Mono objects are finalized asynchronously on a separate thread.
- * This routine tests whether the @thread argument represents the
+ * This routine tests whether the \p thread argument represents the
  * finalization thread.
  * 
- * Returns: TRUE if @thread is the finalization thread.
+ * \returns TRUE if \p thread is the finalization thread.
  */
 gboolean
 mono_gc_is_finalizer_thread (MonoThread *thread)
@@ -1070,20 +1175,20 @@ reference_queue_clear_for_domain (MonoDomain *domain)
 }
 /**
  * mono_gc_reference_queue_new:
- * @callback callback used when processing collected entries.
+ * \param callback callback used when processing collected entries.
  *
  * Create a new reference queue used to process collected objects.
  * A reference queue let you add a pair of (managed object, user data)
- * using the mono_gc_reference_queue_add method.
+ * using the \c mono_gc_reference_queue_add method.
  *
- * Once the managed object is collected @callback will be called
+ * Once the managed object is collected \p callback will be called
  * in the finalizer thread with 'user data' as argument.
  *
  * The callback is called from the finalizer thread without any locks held.
- * When a AppDomain is unloaded, all callbacks for objects belonging to it
+ * When an AppDomain is unloaded, all callbacks for objects belonging to it
  * will be invoked.
  *
- * @returns the new queue.
+ * \returns the new queue.
  */
 MonoReferenceQueue*
 mono_gc_reference_queue_new (mono_reference_queue_callback callback)
@@ -1101,15 +1206,15 @@ mono_gc_reference_queue_new (mono_reference_queue_callback callback)
 
 /**
  * mono_gc_reference_queue_add:
- * @queue the queue to add the reference to.
- * @obj the object to be watched for collection
- * @user_data parameter to be passed to the queue callback
+ * \param queue the queue to add the reference to.
+ * \param obj the object to be watched for collection
+ * \param user_data parameter to be passed to the queue callback
  *
- * Queue an object to be watched for collection, when the @obj is
- * collected, the callback that was registered for the @queue will
- * be invoked with @user_data as argument.
+ * Queue an object to be watched for collection, when the \p obj is
+ * collected, the callback that was registered for the \p queue will
+ * be invoked with \p user_data as argument.
  *
- * @returns false if the queue is scheduled to be freed.
+ * \returns FALSE if the queue is scheduled to be freed.
  */
 gboolean
 mono_gc_reference_queue_add (MonoReferenceQueue *queue, MonoObject *obj, void *user_data)
@@ -1133,9 +1238,9 @@ mono_gc_reference_queue_add (MonoReferenceQueue *queue, MonoObject *obj, void *u
 
 /**
  * mono_gc_reference_queue_free:
- * @queue the queue that should be freed.
+ * \param queue the queue that should be freed.
  *
- * This operation signals that @queue should be freed. This operation is deferred
+ * This operation signals that \p queue should be freed. This operation is deferred
  * as it happens on the finalizer thread.
  *
  * After this call, no further objects can be queued. It's the responsibility of the

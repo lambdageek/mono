@@ -3,8 +3,8 @@
 //      Copyright (c) Microsoft Corporation.  All rights reserved.
 // </copyright>
 //
-// @owner       [....]
-// @backupOwner [....]
+// @owner       Microsoft
+// @backupOwner Microsoft
 //---------------------------------------------------------------------
 
 namespace System.Data.EntityModel.SchemaObjectModel
@@ -540,13 +540,13 @@ namespace System.Data.EntityModel.SchemaObjectModel
             }
         }
 
-        // ISSUE: jthunter-03/14/05 - The [....] "schemas" don't follow the ".Store" assembly 
+        // ISSUE: jthunter-03/14/05 - The Sync "schemas" don't follow the ".Store" assembly 
         // naming convention but need to have the right StoreNamespace reported.
         //
         private static readonly string[] ClientNamespaceOfSchemasMissingStoreSuffix =
         {
-            "System.Storage.[....].Utility",
-            "System.Storage.[....].Services"
+            "System.Storage.Sync.Utility",
+            "System.Storage.Sync.Services"
         };
 
         /// <summary>
@@ -1253,6 +1253,7 @@ namespace System.Data.EntityModel.SchemaObjectModel
                 return schemaSet;
             }
 
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Security.Xml", "CA3060:UseXmlReaderForSchemaRead", Justification = "The schema files are embedded in the product assembly as resources")]
             private static void AddXmlSchemaToSet(XmlSchemaSet schemaSet, XmlSchemaResource schemaResource, HashSet<string> schemasAlreadyAdded)
             {
                 // loop through the children to do a depth first load

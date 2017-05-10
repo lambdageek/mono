@@ -1,3 +1,6 @@
+/**
+ * \file
+ */
 
 #ifndef __MONO_PROFILER_PRIVATE_H__
 #define __MONO_PROFILER_PRIVATE_H__
@@ -74,6 +77,11 @@ void mono_profiler_gc_heap_resize (gint64 new_size);
 void mono_profiler_gc_moves       (void **objects, int num);
 void mono_profiler_gc_handle      (int op, int type, uintptr_t handle, MonoObject *obj);
 void mono_profiler_gc_roots       (int num, void **objects, int *root_types, uintptr_t *extra_info);
+
+void mono_profiler_gc_finalize_begin (void);
+void mono_profiler_gc_finalize_object_begin (MonoObject *obj);
+void mono_profiler_gc_finalize_object_end (MonoObject *obj);
+void mono_profiler_gc_finalize_end (void);
 
 void mono_profiler_code_chunk_new (gpointer chunk, int size);
 void mono_profiler_code_chunk_destroy (gpointer chunk);

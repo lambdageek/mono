@@ -2310,7 +2310,7 @@ namespace System.ServiceModel.Security
                 writer.WriteEndElement();
                 writer.Flush();
                 stream.Seek(0, SeekOrigin.Begin);
-                result = (XmlElement)doc.ReadNode(new XmlTextReader(stream));
+                result = (XmlElement)doc.ReadNode(new XmlTextReader(stream) { DtdProcessing = DtdProcessing.Prohibit });
             }
             return result;
         }
@@ -2923,7 +2923,7 @@ namespace System.ServiceModel.Security
                     return;
                 }
                 WsdlImporter wsdlImporter;
-                // NOTE: [....], Policy import/export is seperate from WSDL however, this policy importer
+                // NOTE: Microsoft, Policy import/export is seperate from WSDL however, this policy importer
                 //      invokes the WsdlImporter. In the event that the current MetadataImporter is a WsdlImporter,
                 //      we should use it's collection of extensions for the import process. Other wise
                 WsdlImporter currentWsdlImporter = importer as WsdlImporter;

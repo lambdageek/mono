@@ -1,5 +1,6 @@
-/*
- * remoting.h: Remoting support
+/**
+ * \file
+ * Remoting support
  *
  * (C) 2014 Xamarin, Inc.  http://www.xamarin.com
  *
@@ -37,12 +38,6 @@ mono_marshal_get_ldfld_wrapper (MonoType *type);
 
 MonoMethod *
 mono_marshal_get_ldflda_wrapper (MonoType *type);
-
-MonoMethod *
-mono_marshal_get_ldfld_remote_wrapper (MonoClass *klass);
-
-MonoMethod *
-mono_marshal_get_stfld_remote_wrapper (MonoClass *klass);
 
 MonoMethod *
 mono_marshal_get_proxy_cancast (MonoClass *klass);

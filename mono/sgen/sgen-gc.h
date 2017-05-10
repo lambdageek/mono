@@ -1,5 +1,6 @@
-/*
- * sgen-gc.c: Simple generational GC.
+/**
+ * \file
+ * Simple generational GC.
  *
  * Copyright 2001-2003 Ximian, Inc
  * Copyright 2003-2010 Novell, Inc.
@@ -34,6 +35,7 @@ typedef struct _SgenThreadInfo SgenThreadInfo;
 #include "mono/sgen/sgen-hash-table.h"
 #include "mono/sgen/sgen-protocol.h"
 #include "mono/sgen/gc-internal-agnostic.h"
+#include "mono/sgen/sgen-thread-pool.h"
 
 /* The method used to clear the nursery */
 /* Clearing at nursery collections is the safest, but has bad interactions with caches.
@@ -116,16 +118,40 @@ extern guint64 stat_objects_copied_major;
 		g_error (__VA_ARGS__);	\
 } } while (0)
 
+#ifdef HAVE_LOCALTIME_R
+# define LOG_TIMESTAMP  \
+	do {	\
+		time_t t;									\
+		struct tm tod;									\
+		time(&t);									\
+		localtime_r(&t, &tod);								\
+		strftime(logTime, sizeof(logTime), "%Y-%m-%d %H:%M:%S", &tod);			\
+	} while (0)
+#else
+# define LOG_TIMESTAMP  \
+	do {	\
+		time_t t;									\
+		struct tm *tod;									\
+		time(&t);									\
+		tod = localtime(&t);								\
+		strftime(logTime, sizeof(logTime), "%F %T", tod);				\
+	} while (0)
+#endif
 
 #define SGEN_LOG(level, format, ...) do {      \
 	if (G_UNLIKELY ((level) <= SGEN_MAX_DEBUG_LEVEL && (level) <= gc_debug_level)) {	\
-		mono_gc_printf (gc_debug_file, format "\n", ##__VA_ARGS__);	\
+		char logTime[80];								\
+		LOG_TIMESTAMP;									\
+		mono_gc_printf (gc_debug_file, "%s " format "\n", logTime, ##__VA_ARGS__);	\
 } } while (0)
 
 #define SGEN_COND_LOG(level, cond, format, ...) do {	\
-	if (G_UNLIKELY ((level) <= SGEN_MAX_DEBUG_LEVEL && (level) <= gc_debug_level)) {	\
-		if (cond)	\
-			mono_gc_printf (gc_debug_file, format "\n", ##__VA_ARGS__);	\
+	if (G_UNLIKELY ((level) <= SGEN_MAX_DEBUG_LEVEL && (level) <= gc_debug_level)) {		\
+		if (cond) {										\
+			char logTime[80];								\
+			LOG_TIMESTAMP;									\
+			mono_gc_printf (gc_debug_file, "%s " format "\n", logTime, ##__VA_ARGS__);	\
+		}											\
 } } while (0)
 
 extern int gc_debug_level;
@@ -158,7 +184,7 @@ sgen_aligned_addr_hash (gconstpointer ptr)
 	return GPOINTER_TO_UINT (ptr) >> 3;
 }
 
-#define SGEN_PTR_IN_NURSERY(p,bits,start,end)	(((mword)(p) & ~((1 << (bits)) - 1)) == (mword)(start))
+#define SGEN_PTR_IN_NURSERY(p,bits,start,end)	(((mword)(p) & ~(((mword)1 << (bits)) - 1)) == (mword)(start))
 
 #ifdef USER_CONFIG
 
@@ -230,7 +256,7 @@ sgen_get_nursery_end (void)
 #define SGEN_POINTER_UNTAG_VTABLE(p)		SGEN_POINTER_UNTAG_ALL((p))
 
 /* returns NULL if not forwarded, or the forwarded address */
-#define SGEN_VTABLE_IS_FORWARDED(vtable) ((GCVTable *)(SGEN_POINTER_IS_TAGGED_FORWARDED ((vtable)) ? SGEN_POINTER_UNTAG_VTABLE ((vtable)) : NULL))
+#define SGEN_VTABLE_IS_FORWARDED(vtable) ((GCObject *)(SGEN_POINTER_IS_TAGGED_FORWARDED ((vtable)) ? SGEN_POINTER_UNTAG_VTABLE ((vtable)) : NULL))
 #define SGEN_OBJECT_IS_FORWARDED(obj) ((GCObject *)SGEN_VTABLE_IS_FORWARDED (((mword*)(obj))[0]))
 
 #define SGEN_VTABLE_IS_PINNED(vtable) SGEN_POINTER_IS_TAGGED_PINNED ((vtable))
@@ -241,6 +267,18 @@ sgen_get_nursery_end (void)
 /* set the forwarded address fw_addr for object obj */
 #define SGEN_FORWARD_OBJECT(obj,fw_addr) do {				\
 		*(void**)(obj) = SGEN_POINTER_TAG_FORWARDED ((fw_addr));	\
+	} while (0)
+#define SGEN_FORWARD_OBJECT_PAR(obj,fw_addr,final_fw_addr) do {			\
+		gpointer old_vtable_word = *(gpointer*)obj;			\
+		gpointer new_vtable_word;					\
+		final_fw_addr = SGEN_VTABLE_IS_FORWARDED (old_vtable_word);	\
+		if (final_fw_addr)						\
+			break;							\
+		new_vtable_word = SGEN_POINTER_TAG_FORWARDED ((fw_addr));	\
+		old_vtable_word = InterlockedCompareExchangePointer ((gpointer*)obj, new_vtable_word, old_vtable_word); \
+		final_fw_addr = SGEN_VTABLE_IS_FORWARDED (old_vtable_word);	\
+		if (!final_fw_addr)						\
+			final_fw_addr = (fw_addr);				\
 	} while (0)
 #define SGEN_PIN_OBJECT(obj) do {	\
 		*(void**)(obj) = SGEN_POINTER_TAG_PINNED (*(void**)(obj)); \
@@ -263,6 +301,7 @@ sgen_get_nursery_end (void)
 List of what each bit on of the vtable gc bits means. 
 */
 enum {
+	// When the Java bridge has determined an object is "bridged", it uses these two bits to cache that information.
 	SGEN_GC_BIT_BRIDGE_OBJECT = 1,
 	SGEN_GC_BIT_BRIDGE_OPAQUE_OBJECT = 2,
 	SGEN_GC_BIT_FINALIZER_AWARE = 4,
@@ -277,6 +316,8 @@ void sgen_update_heap_boundaries (mword low, mword high);
 void sgen_check_section_scan_starts (GCMemSection *section);
 
 void sgen_conservatively_pin_objects_from (void **start, void **end, void *start_nursery, void *end_nursery, int pin_type);
+
+gboolean sgen_gc_initialized (void);
 
 /* Keep in sync with description_for_type() in sgen-internal.c! */
 enum {
@@ -380,17 +421,10 @@ void sgen_scan_area_with_callback (char *start, char *end, IterateObjectCallback
 struct _SgenThreadInfo {
 	SgenClientThreadInfo client_info;
 
-	char **tlab_next_addr;
-	char **tlab_start_addr;
-	char **tlab_temp_end_addr;
-	char **tlab_real_end_addr;
-
-#ifndef HAVE_KW_THREAD
 	char *tlab_start;
 	char *tlab_next;
 	char *tlab_temp_end;
 	char *tlab_real_end;
-#endif
 };
 
 gboolean sgen_is_worker_thread (MonoNativeThreadId thread);
@@ -526,10 +560,13 @@ sgen_nursery_is_object_alive (GCObject *obj)
 
 typedef struct {
 	gboolean is_split;
+	gboolean is_parallel;
 
 	GCObject* (*alloc_for_promotion) (GCVTable vtable, GCObject *obj, size_t objsize, gboolean has_references);
 
 	SgenObjectOperations serial_ops;
+	SgenObjectOperations serial_ops_with_concurrent_major;
+	SgenObjectOperations parallel_ops;
 
 	void (*prepare_to_space) (char *to_space_bitmap, size_t space_bitmap_size);
 	void (*clear_fragments) (void);
@@ -544,7 +581,7 @@ typedef struct {
 
 extern SgenMinorCollector sgen_minor_collector;
 
-void sgen_simple_nursery_init (SgenMinorCollector *collector);
+void sgen_simple_nursery_init (SgenMinorCollector *collector, gboolean parallel);
 void sgen_split_nursery_init (SgenMinorCollector *collector);
 
 /* Updating references */
@@ -557,7 +594,7 @@ sgen_update_reference (GCObject **p, GCObject *o, gboolean allow_null)
 {
 	if (!allow_null)
 		SGEN_ASSERT (0, o, "Cannot update a reference with a NULL pointer");
-	SGEN_ASSERT (0, !sgen_thread_pool_is_thread_pool_thread (mono_native_thread_id_get ()), "Can't update a reference in the worker thread");
+	SGEN_ASSERT (0, !sgen_workers_is_worker_thread (mono_native_thread_id_get ()), "Can't update a reference in the worker thread");
 	*p = o;
 }
 
@@ -578,7 +615,6 @@ typedef enum {
 	ITERATE_OBJECTS_SWEEP = 1,
 	ITERATE_OBJECTS_NON_PINNED = 2,
 	ITERATE_OBJECTS_PINNED = 4,
-	ITERATE_OBJECTS_ALL = ITERATE_OBJECTS_NON_PINNED | ITERATE_OBJECTS_PINNED,
 	ITERATE_OBJECTS_SWEEP_NON_PINNED = ITERATE_OBJECTS_SWEEP | ITERATE_OBJECTS_NON_PINNED,
 	ITERATE_OBJECTS_SWEEP_PINNED = ITERATE_OBJECTS_SWEEP | ITERATE_OBJECTS_PINNED,
 	ITERATE_OBJECTS_SWEEP_ALL = ITERATE_OBJECTS_SWEEP | ITERATE_OBJECTS_NON_PINNED | ITERATE_OBJECTS_PINNED
@@ -600,7 +636,7 @@ typedef struct _SgenMajorCollector SgenMajorCollector;
 struct _SgenMajorCollector {
 	size_t section_size;
 	gboolean is_concurrent;
-	gboolean needs_thread_pool;
+	gboolean is_parallel;
 	gboolean supports_cardtable;
 	gboolean sweeps_lazily;
 
@@ -612,8 +648,11 @@ struct _SgenMajorCollector {
 	SgenObjectOperations major_ops_serial;
 	SgenObjectOperations major_ops_concurrent_start;
 	SgenObjectOperations major_ops_concurrent_finish;
+	SgenObjectOperations major_ops_conc_par_start;
+	SgenObjectOperations major_ops_conc_par_finish;
 
 	GCObject* (*alloc_object) (GCVTable vtable, size_t size, gboolean has_references);
+	GCObject* (*alloc_object_par) (GCVTable vtable, size_t size, gboolean has_references);
 	void (*free_pinned_object) (GCObject *obj, size_t size);
 
 	/*
@@ -625,7 +664,7 @@ struct _SgenMajorCollector {
 	void (*free_non_pinned_object) (GCObject *obj, size_t size);
 	void (*pin_objects) (SgenGrayQueue *queue);
 	void (*pin_major_object) (GCObject *obj, SgenGrayQueue *queue);
-	void (*scan_card_table) (CardTableScanType scan_type, ScanCopyContext ctx);
+	void (*scan_card_table) (CardTableScanType scan_type, ScanCopyContext ctx, int job_index, int job_split_count);
 	void (*iterate_live_block_ranges) (sgen_cardtable_block_callback callback);
 	void (*iterate_block_ranges) (sgen_cardtable_block_callback callback);
 	void (*update_cardtable_mod_union) (void);
@@ -633,7 +672,7 @@ struct _SgenMajorCollector {
 	void (*sweep) (void);
 	gboolean (*have_swept) (void);
 	void (*finish_sweeping) (void);
-	void (*free_swept_blocks) (size_t allowance);
+	void (*free_swept_blocks) (size_t section_reserve);
 	void (*check_scan_starts) (void);
 	void (*dump_heap) (FILE *heap_dump_file);
 	gint64 (*get_used_size) (void);
@@ -654,16 +693,18 @@ struct _SgenMajorCollector {
 	guint8* (*get_cardtable_mod_union_for_reference) (char *object);
 	long long (*get_and_reset_num_major_objects_marked) (void);
 	void (*count_cards) (long long *num_total_cards, long long *num_marked_cards);
+	SgenThreadPool* (*get_sweep_pool) (void);
+
+	void (*worker_init_cb) (gpointer worker);
 };
 
 extern SgenMajorCollector major_collector;
 
 void sgen_marksweep_init (SgenMajorCollector *collector);
-void sgen_marksweep_fixed_init (SgenMajorCollector *collector);
-void sgen_marksweep_par_init (SgenMajorCollector *collector);
-void sgen_marksweep_fixed_par_init (SgenMajorCollector *collector);
 void sgen_marksweep_conc_init (SgenMajorCollector *collector);
+void sgen_marksweep_conc_par_init (SgenMajorCollector *collector);
 SgenMajorCollector* sgen_get_major_collector (void);
+SgenMinorCollector* sgen_get_minor_collector (void);
 
 
 typedef struct _SgenRememberedSet {
@@ -673,12 +714,12 @@ typedef struct _SgenRememberedSet {
 	void (*wbarrier_object_copy) (GCObject* obj, GCObject *src);
 	void (*wbarrier_generic_nostore) (gpointer ptr);
 	void (*record_pointer) (gpointer ptr);
+	void (*wbarrier_range_copy) (gpointer dest, gpointer src, int count);
 
-	void (*scan_remsets) (ScanCopyContext ctx);
+	void (*start_scan_remsets) (void);
 
 	void (*clear_cards) (void);
 
-	void (*finish_minor_collection) (void);
 	gboolean (*find_address) (char *addr);
 	gboolean (*find_address_with_cards) (char *cards_start, guint8 *cards, char *addr);
 } SgenRememberedSet;
@@ -694,7 +735,7 @@ void mono_gc_wbarrier_generic_nostore (gpointer ptr);
 void mono_gc_wbarrier_generic_store (gpointer ptr, GCObject* value);
 void mono_gc_wbarrier_generic_store_atomic (gpointer ptr, GCObject *value);
 
-void sgen_wbarrier_value_copy_bitmap (gpointer _dest, gpointer _src, int size, unsigned bitmap);
+void sgen_wbarrier_range_copy (gpointer _dest, gpointer _src, int size);
 
 static inline SgenDescriptor
 sgen_obj_get_descriptor (GCObject *obj)
@@ -717,12 +758,18 @@ static mword sgen_client_slow_object_get_size (GCVTable vtable, GCObject* o);
 static inline mword
 sgen_safe_object_get_size (GCObject *obj)
 {
-       GCObject *forwarded;
+	GCObject *forwarded;
+	GCVTable vtable = SGEN_LOAD_VTABLE_UNCHECKED (obj);
 
-       if ((forwarded = SGEN_OBJECT_IS_FORWARDED (obj)))
-               obj = forwarded;
-
-       return sgen_client_par_object_get_size (SGEN_LOAD_VTABLE (obj), obj);
+	/*
+	 * Once we load the vtable, we must always use it, in case we are in parallel case.
+	 * Otherwise the object might get forwarded in the meantime and we would read an
+	 * invalid vtable. An object cannot be forwarded for a second time during same GC.
+	 */
+	if ((forwarded = SGEN_VTABLE_IS_FORWARDED (vtable)))
+		return sgen_client_par_object_get_size (SGEN_LOAD_VTABLE (forwarded), obj);
+	else
+		return sgen_client_par_object_get_size ((GCVTable)SGEN_POINTER_UNTAG_ALL (vtable), obj);
 }
 
 static inline gboolean
@@ -786,8 +833,12 @@ void sgen_process_fin_stage_entries (void);
 gboolean sgen_have_pending_finalizers (void);
 void sgen_object_register_for_finalization (GCObject *obj, void *user_data);
 
-int sgen_gather_finalizers_if (SgenObjectPredicateFunc predicate, void *user_data, GCObject **out_array, int out_size);
+void sgen_finalize_if (SgenObjectPredicateFunc predicate, void *user_data);
 void sgen_remove_finalizers_if (SgenObjectPredicateFunc predicate, void *user_data, int generation);
+void sgen_set_suspend_finalizers (void);
+
+void sgen_wbroots_iterate_live_block_ranges (sgen_cardtable_block_callback cb);
+void sgen_wbroots_scan_card_table (ScanCopyContext ctx);
 
 void sgen_register_disappearing_link (GCObject *obj, void **link, gboolean track, gboolean in_gc);
 
@@ -844,7 +895,7 @@ void sgen_los_sweep (void);
 gboolean sgen_ptr_is_in_los (char *ptr, char **start);
 void sgen_los_iterate_objects (IterateObjectCallbackFunc cb, void *user_data);
 void sgen_los_iterate_live_block_ranges (sgen_cardtable_block_callback callback);
-void sgen_los_scan_card_table (CardTableScanType scan_type, ScanCopyContext ctx);
+void sgen_los_scan_card_table (CardTableScanType scan_type, ScanCopyContext ctx, int job_index, int job_split_count);
 void sgen_los_update_cardtable_mod_union (void);
 void sgen_los_count_cards (long long *num_total_cards, long long *num_marked_cards);
 gboolean sgen_los_is_valid_object (char *object);
@@ -852,6 +903,7 @@ gboolean mono_sgen_los_describe_pointer (char *ptr);
 LOSObject* sgen_los_header_for_object (GCObject *data);
 mword sgen_los_object_size (LOSObject *obj);
 void sgen_los_pin_object (GCObject *obj);
+gboolean sgen_los_pin_object_par (GCObject *obj);
 gboolean sgen_los_object_is_pinned (GCObject *obj);
 void sgen_los_mark_mod_union_card (GCObject *mono_obj, void **ptr);
 
@@ -950,8 +1002,9 @@ extern NurseryClearPolicy nursery_clear_policy;
 extern gboolean sgen_try_free_some_memory;
 extern mword total_promoted_size;
 extern mword total_allocated_major;
-
+extern volatile gboolean sgen_suspend_finalizers;
 extern MonoCoopMutex gc_mutex;
+extern volatile gboolean concurrent_collection_in_progress;
 
 /* Nursery helpers. */
 
@@ -975,7 +1028,6 @@ typedef enum {
 	ATYPE_NUM
 } SgenAllocatorType;
 
-void sgen_init_tlab_info (SgenThreadInfo* info);
 void sgen_clear_tlabs (void);
 
 GCObject* sgen_alloc_obj (GCVTable vtable, size_t size);
@@ -984,7 +1036,7 @@ GCObject* sgen_alloc_obj_mature (GCVTable vtable, size_t size);
 
 /* Debug support */
 
-void sgen_check_consistency (void);
+void sgen_check_remset_consistency (void);
 void sgen_check_mod_union_consistency (void);
 void sgen_check_major_refs (void);
 void sgen_check_whole_heap (gboolean allow_missing_pinning);
@@ -1012,7 +1064,7 @@ void sgen_env_var_error (const char *env_var, const char *fallback, const char *
 
 /* Utilities */
 
-void sgen_qsort (void *base, size_t nel, size_t width, int (*compar) (const void*, const void*));
+void sgen_qsort (void *array, size_t count, size_t element_size, int (*compare) (const void*, const void*));
 gint64 sgen_timestamp (void);
 
 /*
@@ -1038,15 +1090,30 @@ gboolean nursery_canaries_enabled (void);
 #define CANARY_VALID(addr) (strncmp ((char*) (addr), CANARY_STRING, CANARY_SIZE) == 0)
 
 #define CHECK_CANARY_FOR_OBJECT(addr,fail) if (nursery_canaries_enabled ()) {	\
-				char* canary_ptr = (char*) (addr) + sgen_safe_object_get_size_unaligned ((GCObject *) (addr));	\
+				guint size = sgen_safe_object_get_size_unaligned ((GCObject *) (addr)); \
+				char* canary_ptr = (char*) (addr) + size;	\
 				if (!CANARY_VALID(canary_ptr)) {	\
-					char canary_copy[CANARY_SIZE +1];	\
-					strncpy (canary_copy, canary_ptr, CANARY_SIZE);	\
-					canary_copy[CANARY_SIZE] = 0;	\
-					if ((fail))			\
-						g_error ("CORRUPT CANARY:\naddr->%p\ntype->%s\nexcepted->'%s'\nfound->'%s'\n", (char*) addr, sgen_client_vtable_get_name (SGEN_LOAD_VTABLE ((addr))), CANARY_STRING, canary_copy); \
-					else				\
-						g_warning ("CORRUPT CANARY:\naddr->%p\ntype->%s\nexcepted->'%s'\nfound->'%s'\n", (char*) addr, sgen_client_vtable_get_name (SGEN_LOAD_VTABLE ((addr))), CANARY_STRING, canary_copy); \
+					char *window_start, *window_end; \
+					window_start = (char*)(addr) - 128; \
+					if (!sgen_ptr_in_nursery (window_start)) \
+						window_start = sgen_get_nursery_start (); \
+					window_end = (char*)(addr) + 128; \
+					if (!sgen_ptr_in_nursery (window_end)) \
+						window_end = sgen_get_nursery_end (); \
+					fprintf (stderr, "\nCANARY ERROR - Type:%s Size:%d Address:%p Data:\n", sgen_client_vtable_get_name (SGEN_LOAD_VTABLE ((addr))), size,  (char*) addr); \
+					fwrite (addr, sizeof (char), size, stderr); \
+					fprintf (stderr, "\nCanary zone (next 12 chars):\n"); \
+					fwrite (canary_ptr, sizeof (char), 12, stderr); \
+					fprintf (stderr, "\nOriginal canary string:\n"); \
+					fwrite (CANARY_STRING, sizeof (char), 8, stderr); \
+					for (int x = -8; x <= 8; x++) { \
+						if (canary_ptr + x < (char*) addr); \
+							continue; \
+						if (CANARY_VALID(canary_ptr +x)) \
+							fprintf (stderr, "\nCANARY ERROR - canary found at offset %d\n", x); \
+					} \
+					fprintf (stderr, "\nSurrounding nursery (%p - %p):\n", window_start, window_end); \
+					fwrite (window_start, sizeof (char), window_end - window_start, stderr); \
 				} }
 
 /*

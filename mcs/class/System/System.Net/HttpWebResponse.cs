@@ -86,10 +86,14 @@ namespace System.Net
 			}
 
 			string content_encoding = webHeaders ["Content-Encoding"];
-			if (content_encoding == "gzip" && (data.request.AutomaticDecompression & DecompressionMethods.GZip) != 0)
+			if (content_encoding == "gzip" && (data.request.AutomaticDecompression & DecompressionMethods.GZip) != 0) {
 				stream = new GZipStream (stream, CompressionMode.Decompress);
-			else if (content_encoding == "deflate" && (data.request.AutomaticDecompression & DecompressionMethods.Deflate) != 0)
+				webHeaders.Remove (HttpRequestHeader.ContentEncoding);
+			}
+			else if (content_encoding == "deflate" && (data.request.AutomaticDecompression & DecompressionMethods.Deflate) != 0) {
 				stream = new DeflateStream (stream, CompressionMode.Decompress);
+				webHeaders.Remove (HttpRequestHeader.ContentEncoding);
+			}
 		}
 
 		[Obsolete ("Serialization is obsoleted for this type", false)]
@@ -106,7 +110,7 @@ namespace System.Net
 			version = (Version) info.GetValue ("version", typeof (Version));
 			statusCode = (HttpStatusCode) info.GetValue ("statusCode", typeof (HttpStatusCode));
 		}
-		
+
 		// Properties
 		
 		public string CharacterSet {
@@ -225,7 +229,7 @@ namespace System.Net
 		public string Server {
 			get {
 				CheckDisposed ();
-				return webHeaders ["Server"]; 
+				return webHeaders ["Server"] ?? "";
 			}
 		}
 		

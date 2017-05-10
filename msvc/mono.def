@@ -241,8 +241,8 @@ mono_disasm_code
 mono_disasm_code_one
 mono_dl_fallback_register
 mono_dl_fallback_unregister
+mono_dl_open
 mono_dllmap_insert
-mono_domain_add_class_static_data
 mono_domain_assembly_open
 mono_domain_create
 mono_domain_create_appdomain
@@ -263,7 +263,6 @@ mono_domain_set_internal
 mono_domain_try_type_resolve
 mono_domain_try_unload
 mono_domain_unload
-mono_emit_native_call
 mono_environment_exitcode_get
 mono_environment_exitcode_set
 mono_error_cleanup
@@ -423,6 +422,7 @@ mono_get_uint64_class
 mono_get_uintptr_class
 mono_get_void_class
 mono_guid_to_string
+mono_guid_to_string_minimal
 mono_image_add_to_name_cache
 mono_image_addref
 mono_image_close
@@ -463,7 +463,6 @@ mono_images_init
 mono_init
 mono_init_from_assembly
 mono_init_version
-mono_inst_name
 mono_install_assembly_load_hook
 mono_install_assembly_postload_refonly_search_hook
 mono_install_assembly_postload_search_hook
@@ -494,6 +493,7 @@ mono_ldstr
 mono_ldtoken
 mono_load_remote_field
 mono_load_remote_field_new
+mono_loader_register_module
 mono_lock_free_alloc
 mono_lock_free_allocator_check_consistency
 mono_lock_free_allocator_init_allocator
@@ -505,6 +505,12 @@ mono_lock_free_queue_init
 mono_lock_free_queue_node_init
 mono_lock_free_queue_node_unpoison
 mono_locks_dump
+mono_log_close_logfile
+mono_log_close_syslog
+mono_log_open_logfile
+mono_log_open_syslog
+mono_log_write_logfile
+mono_log_write_syslog
 mono_lookup_icall_symbol
 mono_lookup_internal_call
 mono_lookup_pinvoke_call
@@ -745,7 +751,6 @@ mono_register_bundled_assemblies
 mono_register_config_for_assembly
 mono_register_machine_config
 mono_register_symfile_for_assembly
-mono_replace_ins
 mono_runtime_class_init
 mono_runtime_cleanup
 mono_runtime_delegate_invoke
@@ -769,6 +774,7 @@ mono_security_core_clr_require_elevated_permissions
 mono_security_core_clr_set_options
 mono_security_enable_core_clr
 mono_security_set_core_clr_platform_callback
+mono_set_allocator_vtable
 mono_set_assemblies_path
 mono_set_break_policy
 mono_set_config_dir
@@ -814,6 +820,8 @@ mono_string_hash
 mono_string_intern
 mono_string_is_interned
 mono_string_length
+mono_string_empty
+mono_string_empty_wrapper
 mono_string_new
 mono_string_new_len
 mono_string_new_size
@@ -852,14 +860,20 @@ mono_threads_attach_coop
 mono_threads_attach_tools_thread
 mono_threads_detach_coop
 mono_threads_enter_gc_safe_region
+mono_threads_enter_gc_safe_region_unbalanced
 mono_threads_enter_gc_unsafe_region
+mono_threads_enter_gc_unsafe_region_unbalanced
 mono_threads_exit_gc_safe_region
+mono_threads_exit_gc_safe_region_unbalanced
 mono_threads_exit_gc_unsafe_region
+mono_threads_exit_gc_unsafe_region_unbalanced
 mono_threads_get_default_stacksize
 mono_threads_request_thread_dump
 mono_threads_set_default_stacksize
 mono_trace_set_level_string
 mono_trace_set_log_handler
+mono_trace_set_logdest_string
+mono_trace_set_logheader_string
 mono_trace_set_mask_string
 mono_trace_set_print_handler
 mono_trace_set_printerr_handler

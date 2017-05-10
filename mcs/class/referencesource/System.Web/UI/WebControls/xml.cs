@@ -41,6 +41,7 @@ namespace System.Web.UI.WebControls {
 
 
         [SuppressMessage("Microsoft.Security", "MSEC1220:ReviewDtdProcessingAssignment", Justification = "Dtd processing is needed for back-compat, but is being done as safely as possible.")]
+        [SuppressMessage("Microsoft.Security.Xml", "CA3069:ReviewDtdProcessingAssignment", Justification = "Dtd processing is needed for back-compat, but is being done as safely as possible.")]
         public override void SetTagInnerText(string text) {
             if (!Util.IsWhiteSpaceString(text)) {
 
@@ -114,7 +115,9 @@ namespace System.Web.UI.WebControls {
 #pragma warning restore 0618
 
         [SuppressMessage("Microsoft.Security", "MSEC1201:DoNotUseXslTransform", Justification = "_identityTransform contents are trusted hard-coded string.")]
+        [SuppressMessage("Microsoft.Security.Xml", "CA3050:DoNotUseXslTransform", Justification = "_identityTransform contents are trusted hard-coded string.")]
         [SuppressMessage("Microsoft.Security", "MSEC1205:DoNotAllowDtdOnXmlTextReader", Justification = "_identityTransform contents are trusted hard-coded string.")]
+        [SuppressMessage("Microsoft.Security.Xml", "CA3054:DoNotAllowDtdOnXmlTextReader", Justification = "_identityTransform contents are trusted hard-coded string.")]
         [PermissionSet(SecurityAction.Assert, Unrestricted = true)]
         static Xml() {
 
@@ -332,6 +335,7 @@ namespace System.Web.UI.WebControls {
 
 
         [SuppressMessage("Microsoft.Security", "MSEC1218:ReviewWebControlForSet_DocumentContent", Justification = "Legacy code that trusts our developer input.  Optional safer codepath available via appSettings/aspnet:RestrictXmlControls configuration.")]
+        [SuppressMessage("Microsoft.Security.Xml", "CA3067:ReviewWebControlForSet_DocumentContent", Justification = "Legacy code that trusts our developer input.  Optional safer codepath available via appSettings/aspnet:RestrictXmlControls configuration.")]
         protected override void AddParsedSubObject(object obj) {
             if (obj is LiteralControl) {
                 // Trim the initial whitespaces since XML is very picky (related to ASURT 58100)
@@ -399,7 +403,7 @@ namespace System.Web.UI.WebControls {
             string physicalPath;
             ResolvePhysicalOrVirtualPath(_transformSource, out virtualPath, out physicalPath);
 
-            CacheInternal cacheInternal = HttpRuntime.CacheInternal;
+            CacheStoreProvider cacheInternal = HttpRuntime.Cache.InternalCache;
             string key = CacheInternal.PrefixLoadXPath + ((physicalPath != null) ?
                 physicalPath : virtualPath.VirtualPathString);
 
@@ -432,7 +436,8 @@ namespace System.Web.UI.WebControls {
                 // Cache it, but only if we got a dependency
                 if (dependency != null) {
                     using (dependency) {
-                        cacheInternal.UtcInsert(key, ((_compiledTransform == null) ? (object)_transform : (object)_compiledTransform), dependency);
+                        cacheInternal.Insert(key, ((_compiledTransform == null) ? (object)_transform : (object)_compiledTransform),
+                            new CacheInsertOptions() { Dependencies = dependency });
                     }
                 }
             }
@@ -463,7 +468,7 @@ namespace System.Web.UI.WebControls {
             // Make it absolute and check security
             string physicalPath = MapPathSecure(_documentSource);
 
-            CacheInternal cacheInternal = System.Web.HttpRuntime.CacheInternal;
+            CacheStoreProvider cacheInternal = System.Web.HttpRuntime.Cache.InternalCache;
             string key = CacheInternal.PrefixLoadXml + physicalPath;
 
             _document = (XmlDocument) cacheInternal.Get(key);
@@ -476,7 +481,7 @@ namespace System.Web.UI.WebControls {
 
                     _document = new XmlDocument();
                     _document.Load(XmlUtils.CreateXmlReader(stream, physicalPath));
-                    cacheInternal.UtcInsert(key, _document, dependency);
+                    cacheInternal.Insert(key, _document, new CacheInsertOptions() { Dependencies = dependency });
                 }
             }
             else {
@@ -507,7 +512,7 @@ namespace System.Web.UI.WebControls {
             string physicalPath;
             ResolvePhysicalOrVirtualPath(_documentSource, out virtualPath, out physicalPath);
 
-            CacheInternal cacheInternal = HttpRuntime.CacheInternal;
+            CacheStoreProvider cacheInternal = HttpRuntime.Cache.InternalCache;
             string key = CacheInternal.PrefixLoadXPath + ((physicalPath != null) ?
                 physicalPath : virtualPath.VirtualPathString);
 
@@ -529,7 +534,7 @@ namespace System.Web.UI.WebControls {
                 // Cache it, but only if we got a dependency
                 if (dependency != null) {
                     using (dependency) {
-                        cacheInternal.UtcInsert(key, _xpathDocument, dependency);
+                        cacheInternal.Insert(key, _xpathDocument, new CacheInsertOptions() { Dependencies = dependency });
                     }
                 }
             }

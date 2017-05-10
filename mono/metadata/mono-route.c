@@ -1,6 +1,7 @@
-/*
- * mono-route.c: Read the network routing tables using sysctl(3) calls
- *               Required for Unix-like systems that don't have Linux's /proc/net/route
+/**
+ * \file
+ * Read the network routing tables using sysctl(3) calls
+ * Required for Unix-like systems that don't have Linux's /proc/net/route
  *
  * Author:
  *   Ben Woods (woodsb02@gmail.com)
@@ -8,6 +9,7 @@
 
 #if defined(PLATFORM_MACOSX) || defined(PLATFORM_BSD)
 
+#include <config.h>
 #include <sys/socket.h>
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -53,12 +55,14 @@ extern MonoBoolean ves_icall_System_Net_NetworkInformation_MacOsIPInterfacePrope
 		return FALSE;
 
 	// Allocate suffcient memory for available data based on the previous sysctl call
-	if ((buf = malloc(needed)) == NULL)
+	if ((buf = g_malloc (needed)) == NULL)
 		return FALSE;
 
 	// Second sysctl call to retrieve data into appropriately sized buffer
-	if (sysctl(mib, G_N_ELEMENTS(mib), buf, &needed, NULL, 0) < 0)
+	if (sysctl(mib, G_N_ELEMENTS(mib), buf, &needed, NULL, 0) < 0) {
+		g_free (buf);
 		return FALSE;
+	}
 
 	lim = buf + needed;
 	for (next = buf; next < lim; next += rtm->rtm_msglen) {
@@ -72,7 +76,9 @@ extern MonoBoolean ves_icall_System_Net_NetworkInformation_MacOsIPInterfacePrope
 		num_gws++;
 	}
 
-	*gw_addr_list = mono_array_new(domain, mono_get_string_class (), num_gws);
+	*gw_addr_list = mono_array_new_checked (domain, mono_get_string_class (), num_gws, &error);
+	if (!is_ok (&error))
+		goto leave;
 
 	for (next = buf; next < lim; next += rtm->rtm_msglen) {
 		rtm = (struct rt_msghdr *)next;
@@ -98,12 +104,15 @@ extern MonoBoolean ves_icall_System_Net_NetworkInformation_MacOsIPInterfacePrope
 			// snprintf output truncated
 			continue;
 
-		addr_string = mono_string_new (domain, addr);
+		addr_string = mono_string_new_checked (domain, addr, &error);
+		if (!is_ok (&error))
+			goto leave;
 		mono_array_setref (*gw_addr_list, gwnum, addr_string);
 		gwnum++;
 	}
-	free(buf);
-	return TRUE;
+leave:
+	g_free (buf);
+	return is_ok (&error);
 }
 
 in_addr_t gateway_from_rtm(struct rt_msghdr *rtm)

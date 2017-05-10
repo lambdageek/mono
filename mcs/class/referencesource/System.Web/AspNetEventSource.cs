@@ -91,7 +91,7 @@ namespace System.Web {
         // Overload used only for deducing ETW parameters; use the public entry point instead.
         //
         // !! WARNING !!
-        // The logic in RequestEnteredAspNetPipelineImpl must be kept in [....] with these parameters, otherwise
+        // The logic in RequestEnteredAspNetPipelineImpl must be kept in sync with these parameters, otherwise
         // type safety violations could occur.
         [SuppressMessage("Microsoft.Performance", "CA1811:AvoidUncalledPrivateCode", Justification = "ETW looks at this method using reflection.")]
         [Event((int)Events.RequestEnteredAspNetPipeline, Level = EventLevel.Informational, Task = (EventTask)Tasks.Request, Opcode = EventOpcode.Send, Version = 1)]
@@ -118,7 +118,7 @@ namespace System.Web {
 
             fixed (char* pHttpVerb = httpVerb) {
                 // !! WARNING !!
-                // This logic must be kept in [....] with the ETW-deduced parameters in RequestStarted,
+                // This logic must be kept in sync with the ETW-deduced parameters in RequestStarted,
                 // otherwise type safety violations could occur.
                 const int EVENTDATA_COUNT = 3;
                 EventData* pEventData = stackalloc EventData[EVENTDATA_COUNT];
@@ -140,8 +140,12 @@ namespace System.Web {
         // Event signals that ASP.NET has started processing a request.
         // Overload used only for deducing ETW parameters; use the public entry point instead.
         //
+        // Visual Studio Online #222067 - This event is hardcoded to opt-out of EventSource activityID tracking. 
+        // This would normally be done by setting ActivityOptions = EventActivityOptions.Disable in the 
+        // Event attribute, but this causes a dependency between System.Web and mscorlib that breaks servicing. 
+        // 
         // !! WARNING !!
-        // The logic in RequestStartedImpl must be kept in [....] with these parameters, otherwise
+        // The logic in RequestStartedImpl must be kept in sync with these parameters, otherwise
         // type safety violations could occur.
         [SuppressMessage("Microsoft.Performance", "CA1811:AvoidUncalledPrivateCode", Justification = "ETW looks at this method using reflection.")]
         [Event((int)Events.RequestStarted, Level = EventLevel.Informational, Task = (EventTask)Tasks.Request, Opcode = EventOpcode.Start, Version = 1)]
@@ -150,6 +154,10 @@ namespace System.Web {
         }
 
         // Event signals that ASP.NET has completed processing a request.
+        //
+        // Visual Studio Online #222067 - This event is hardcoded to opt-out of EventSource activityID tracking. 
+        // This would normally be done by setting ActivityOptions = EventActivityOptions.Disable in the 
+        // Event attribute, but this causes a dependency between System.Web and mscorlib that breaks servicing. 
         [Event((int)Events.RequestCompleted, Level = EventLevel.Informational, Task = (EventTask)Tasks.Request, Opcode = EventOpcode.Stop, Version = 1)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void RequestCompleted() {

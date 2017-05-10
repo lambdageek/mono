@@ -8,21 +8,17 @@
 //
 
 using NUnit.Framework;
-#if !MONODROID
-using NUnit.Framework.SyntaxHelpers;
-#endif
+
 using System;
 using System.Text;
 using System.Threading;
 using Mono.Unix;
 using Mono.Unix.Android;
 using Mono.Unix.Native;
-#if !MONODROID
-namespace NUnit.Framework.SyntaxHelpers { class Dummy {} }
-#endif
+
 namespace MonoTests.Mono.Unix {
 
-	[TestFixture]
+	[TestFixture, Category ("NotOnWindows")]
 	public class UnixSignalTest {
 
 		// helper method to create a thread waiting on a UnixSignal
@@ -140,14 +136,16 @@ namespace MonoTests.Mono.Unix {
 		}
 
 		[Test]
-		[ExpectedException]
 		[Category ("NotOnMac")]
 		public void TestSignumPropertyThrows ()
 		{
 			if (!TestHelper.CanUseRealTimeSignals ())
 				return;
-			UnixSignal signal1 = new UnixSignal (new RealTimeSignum (0));
-			Signum s = signal1.Signum;
+
+			Assert.Throws<InvalidOperationException> (() => {
+				UnixSignal signal1 = new UnixSignal (new RealTimeSignum (0));
+				Signum s = signal1.Signum;
+			});
 		}
 
 		[Test]
@@ -162,14 +160,16 @@ namespace MonoTests.Mono.Unix {
 		}
 	
 		[Test]
-		[ExpectedException]
 		[Category ("NotOnMac")]
 		public void TestRealTimePropertyThrows ()
 		{
 			if (!TestHelper.CanUseRealTimeSignals ())
-				return;
-			UnixSignal signal1 = new UnixSignal (Signum.SIGSEGV);
-			RealTimeSignum s = signal1.RealTimeSignum;
+					return;
+
+			Assert.Throws<InvalidOperationException> (() => {
+				UnixSignal signal1 = new UnixSignal (Signum.SIGSEGV);
+				RealTimeSignum s = signal1.RealTimeSignum;
+			});
 		}
 
 		[Test]

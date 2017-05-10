@@ -3,7 +3,7 @@
 //   Copyright (c) Microsoft Corporation.  All rights reserved.
 // 
 // ==--==
-// <OWNER>[....]</OWNER>
+// <OWNER>Microsoft</OWNER>
 // 
 
 //
@@ -16,6 +16,7 @@ namespace System.Security.Cryptography
 {
     using Microsoft.Win32;
     using System.IO;
+    using System.Reflection;
     using System.Globalization;
     using System.Runtime.CompilerServices;
     using System.Runtime.InteropServices;
@@ -372,8 +373,20 @@ namespace System.Security.Cryptography
 
 #if FEATURE_X509_SECURESTRINGS
             // If the user wanted to specify a PIN or HWND for a smart card CSP, apply those settings now.
-            if (parameters.ParentWindowHandle != IntPtr.Zero)
-                SetProviderParameter(TempFetchedProvHandle, parameters.KeyNumber, Constants.CLR_PP_CLIENT_HWND, parameters.ParentWindowHandle);
+            if (parameters.ParentWindowHandle != IntPtr.Zero) {
+                // Copy the value onto the stack.
+                // Then, for versions beyond 4.6.2 take the address of that copy, since &hwnd is what the API wants.
+                IntPtr parentWindowHandle = parameters.ParentWindowHandle;
+                IntPtr pHwnd = parentWindowHandle;
+
+                if (!AppContextSwitches.DoNotAddrOfCspParentWindowHandle) {
+                    unsafe {
+                        pHwnd = new IntPtr(&parentWindowHandle);
+                    }
+                }
+
+                SetProviderParameter(TempFetchedProvHandle, parameters.KeyNumber, Constants.CLR_PP_CLIENT_HWND, pHwnd);
+            }
             else if (parameters.KeyPassword != null) {
                 IntPtr szPassword = Marshal.SecureStringToCoTaskMemAnsi(parameters.KeyPassword);
                 try {
@@ -1017,7 +1030,74 @@ namespace System.Security.Cryptography
         [ResourceExposure(ResourceScope.None)]  // Creates a process resource, but it can't be scoped.
         [DllImport(JitHelpers.QCall, CharSet = CharSet.Unicode), SuppressUnmanagedCodeSecurity]
         internal static extern SafeHashHandle CreateHash(SafeProvHandle hProv, int algid);
+#endif
+        internal static HashAlgorithmName OidToHashAlgorithmName(string oid)
+        {
+            switch (oid)
+            {
+                case Constants.OID_OIWSEC_SHA1:
+                    return HashAlgorithmName.SHA1;
 
+                case Constants.OID_OIWSEC_SHA256:
+                    return HashAlgorithmName.SHA256;
+
+                case Constants.OID_OIWSEC_SHA384:
+                    return HashAlgorithmName.SHA384;
+
+                case Constants.OID_OIWSEC_SHA512:
+                    return HashAlgorithmName.SHA512;
+
+                default:
+                    throw new NotSupportedException();
+            }
+        }
+
+        //
+        // Backward-compat hack for third-party RSA-derived classes:
+        // 
+        // Because the SignHash()/VerifyHash()/Encrypt()/Decrypt() methods are new on RSA, we may 
+        // encounter older third-party RSA-derived classes that don't override them
+        // (and if they don't override them, these methods will throw since they are effectively abstract methods that had to declared non-abstract
+        // for backward compat reasons.)
+        //
+        internal static bool DoesRsaKeyOverride(RSA rsaKey, string methodName, Type[] parameterTypes)
+        {
+            // A fast-path check for the common cases where we know we implemented the overrides.
+            Type t = rsaKey.GetType();
+            if (rsaKey is RSACryptoServiceProvider)
+            {
+#if DEBUG
+                // On checked builds, do the slow-path check anyway so it gets exercised.
+                bool foundOverride = DoesRsaKeyOverrideSlowPath(t, methodName, parameterTypes);
+                BCLDebug.Assert(foundOverride, "RSACryptoServiceProvider expected to override " + methodName);
+#endif
+                return true;
+            }
+
+            string fullName = t.FullName;
+            if (fullName == "System.Security.Cryptography.RSACng")
+            {
+#if DEBUG
+                // On checked builds, do the slow-path check anyway so it gets exercised.
+                bool foundOverride = DoesRsaKeyOverrideSlowPath(t, methodName, parameterTypes);
+                BCLDebug.Assert(foundOverride, "RSACng expected to override " + methodName);
+#endif
+                return true;
+            }
+            return DoesRsaKeyOverrideSlowPath(t, methodName, parameterTypes);
+        }
+
+        private static bool DoesRsaKeyOverrideSlowPath(Type t, string methodName, Type[] parameterTypes)
+        {
+            MethodInfo method = t.GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance, null, parameterTypes, null);
+            BCLDebug.Assert(method != null, "method != null"); 
+            Type declaringType = method.DeclaringType;
+            if (declaringType == typeof(RSA))
+                return false;
+
+            return true;
+        }
+#if !MONO
         [System.Security.SecurityCritical]  // auto-generated
         [ResourceExposure(ResourceScope.None)]
         [DllImport(JitHelpers.QCall, CharSet = CharSet.Unicode), SuppressUnmanagedCodeSecurity]

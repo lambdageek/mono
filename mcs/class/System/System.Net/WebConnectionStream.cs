@@ -459,7 +459,7 @@ namespace System.Net
 				result.SetCompleted (false, 0);
 				if (!initRead) {
 					initRead = true;
-					WebConnection.InitRead (cnc);
+					cnc.InitRead ();
 				}
 			} catch (Exception e) {
 				KillBuffer ();
@@ -666,7 +666,7 @@ namespace System.Net
 					cnc.EndWrite (request, true, r);
 					if (!initRead) {
 						initRead = true;
-						WebConnection.InitRead (cnc);
+						cnc.InitRead ();
 					}
 					var cl = request.ContentLength;
 					if (!sendChunked && cl == 0)
@@ -719,23 +719,23 @@ namespace System.Net
 
 			SetHeadersAsync (true, inner => {
 				if (inner.GotException) {
-					result.SetCompleted (inner.CompletedSynchronously, inner.Exception);
+					result.SetCompleted (inner.CompletedSynchronouslyPeek, inner.Exception);
 					return;
 				}
 
 				if (cnc.Data.StatusCode != 0 && cnc.Data.StatusCode != 100) {
-					result.SetCompleted (inner.CompletedSynchronously);
+					result.SetCompleted (inner.CompletedSynchronouslyPeek);
 					return;
 				}
 
 				if (!initRead) {
 					initRead = true;
-					WebConnection.InitRead (cnc);
+					cnc.InitRead ();
 				}
 
 				if (length == 0) {
 					complete_request_written = true;
-					result.SetCompleted (inner.CompletedSynchronously);
+					result.SetCompleted (inner.CompletedSynchronouslyPeek);
 					return;
 				}
 
@@ -800,7 +800,7 @@ namespace System.Net
 				complete_request_written = true;
 				if (!initRead) {
 					initRead = true;
-					WebConnection.InitRead (cnc);
+					cnc.InitRead ();
 				}
 				return;
 			}

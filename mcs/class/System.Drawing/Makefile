@@ -10,6 +10,14 @@ LIB_MCS_FLAGS = /unsafe \
 	-resource:Assembly/Error.ico,Error.ico -resource:Assembly/Warning.ico,Warning.ico \
 	-resource:Assembly/Question.ico,Question.ico -resource:Assembly/Shield.ico,Shield.ico
 
+ifeq (winaot, $(PROFILE))
+LIB_MCS_FLAGS += /keyfile:../msfinal.pub
+else ifeq (orbis, $(PROFILE))
+LIB_MCS_FLAGS += /keyfile:../msfinal.pub
+else
+LIB_MCS_FLAGS += -d:FEATURE_TYPECONVERTER,SUPPORTS_WINDOWS_COLORS
+endif
+
 TEST_LIB_REFS = System.Drawing System.Runtime.Serialization.Formatters.Soap System.Xml
 
 TEST_MCS_FLAGS = $(LIB_MCS_FLAGS) -define:TEST -resource:Test/resources/indexed.png,indexed.png \

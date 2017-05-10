@@ -1,5 +1,6 @@
-/*
- * mini-ia64.c: IA64 backend for the Mono code generator
+/**
+ * \file
+ * IA64 backend for the Mono code generator
  *
  * Authors:
  *   Zoltan Varga (vargaz@gmail.com)
@@ -21,7 +22,7 @@
 #include <mono/metadata/threads.h>
 #include <mono/metadata/profiler-private.h>
 #include <mono/utils/mono-math.h>
-#include <mono/utils/mono-hwcap-ia64.h>
+#include <mono/utils/mono-hwcap.h>
 
 #include "trace.h"
 #include "mini-ia64.h"
@@ -350,23 +351,17 @@ get_call_info (MonoCompile *cfg, MonoMemPool *mp, MonoMethodSignature *sig, gboo
 	{
 		ret_type = mini_get_underlying_type (sig->ret);
 		switch (ret_type->type) {
-		case MONO_TYPE_BOOLEAN:
 		case MONO_TYPE_I1:
 		case MONO_TYPE_U1:
 		case MONO_TYPE_I2:
 		case MONO_TYPE_U2:
-		case MONO_TYPE_CHAR:
 		case MONO_TYPE_I4:
 		case MONO_TYPE_U4:
 		case MONO_TYPE_I:
 		case MONO_TYPE_U:
 		case MONO_TYPE_PTR:
 		case MONO_TYPE_FNPTR:
-		case MONO_TYPE_CLASS:
 		case MONO_TYPE_OBJECT:
-		case MONO_TYPE_SZARRAY:
-		case MONO_TYPE_ARRAY:
-		case MONO_TYPE_STRING:
 			cinfo->ret.storage = ArgInIReg;
 			cinfo->ret.reg = IA64_R8;
 			break;
@@ -595,6 +590,12 @@ mono_arch_init (void)
 void
 mono_arch_cleanup (void)
 {
+}
+
+gboolean
+mono_arch_have_fast_tls (void)
+{
+	return FALSE;
 }
 
 /*
@@ -2923,11 +2924,6 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 
 			break;
 		}
-		case OP_TLS_GET:
-			ia64_adds_imm (code, ins->dreg, ins->inst_offset, IA64_TP);
-			ia64_ld8 (code, ins->dreg, ins->dreg);
-			break;
-
 			/* Synchronization */
 		case OP_MEMORY_BARRIER:
 			ia64_mf (code);
@@ -3781,7 +3777,7 @@ mono_arch_patch_code (MonoCompile *cfg, MonoMethod *method, MonoDomain *domain, 
 {
 	MonoJumpInfo *patch_info;
 
-	mono_error_init (error);
+	error_init (error);
 
 	for (patch_info = ji; patch_info; patch_info = patch_info->next) {
 		unsigned char *ip = patch_info->ip.i + code;
@@ -4532,8 +4528,8 @@ mono_arch_free_jit_tls_data (MonoJitTlsData *tls)
  * LOCKING: called with the domain lock held
  */
 gpointer
-mono_arch_build_imt_thunk (MonoVTable *vtable, MonoDomain *domain, MonoIMTCheckItem **imt_entries, int count,
-	gpointer fail_tramp)
+mono_arch_build_imt_trampoline (MonoVTable *vtable, MonoDomain *domain, MonoIMTCheckItem **imt_entries, int count,
+								gpointer fail_tramp)
 {
 	int i;
 	int size = 0;
@@ -4613,7 +4609,7 @@ mono_arch_build_imt_thunk (MonoVTable *vtable, MonoDomain *domain, MonoIMTCheckI
 
 	size = code.buf - buf;
 	if (fail_tramp) {
-		start = mono_method_alloc_generic_virtual_thunk (domain, size + 16);
+		start = mono_method_alloc_generic_virtual_trampoline (domain, size + 16);
 		start = (gpointer)ALIGN_TO (start, 16);
 	} else {
 		start = mono_domain_code_reserve (domain, size);

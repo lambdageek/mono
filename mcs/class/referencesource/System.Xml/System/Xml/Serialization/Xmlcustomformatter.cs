@@ -2,7 +2,7 @@
 // <copyright file="XmlCustomFormatter.cs" company="Microsoft">
 //     Copyright (c) Microsoft Corporation.  All rights reserved.
 // </copyright>
-// <owner current="true" primary="true">[....]</owner>                                                                
+// <owner current="true" primary="true">Microsoft</owner>                                                                
 //------------------------------------------------------------------------------
 namespace System.Xml.Serialization {
 
@@ -77,7 +77,14 @@ namespace System.Xml.Serialization {
         }
 
         internal static string FromTime(DateTime value) {
-            return XmlConvert.ToString(DateTime.MinValue + value.TimeOfDay, "HH:mm:ss.fffffffzzzzzz");
+            if (!LocalAppContextSwitches.IgnoreKindInUtcTimeSerialization && value.Kind == DateTimeKind.Utc)
+            {
+                return XmlConvert.ToString(DateTime.MinValue + value.TimeOfDay, "HH:mm:ss.fffffffZ");
+            }
+            else
+            {
+                return XmlConvert.ToString(DateTime.MinValue + value.TimeOfDay, "HH:mm:ss.fffffffzzzzzz");
+            }
         }
 
         internal static string FromDateTime(DateTime value) {
@@ -337,7 +344,14 @@ namespace System.Xml.Serialization {
         }
 
         internal static DateTime ToTime(string value) {
-            return DateTime.ParseExact(value, allTimeFormats, DateTimeFormatInfo.InvariantInfo, DateTimeStyles.AllowLeadingWhite|DateTimeStyles.AllowTrailingWhite|DateTimeStyles.NoCurrentDateDefault);
+            if (!LocalAppContextSwitches.IgnoreKindInUtcTimeSerialization)
+            {
+                return DateTime.ParseExact(value, allTimeFormats, DateTimeFormatInfo.InvariantInfo, DateTimeStyles.AllowLeadingWhite | DateTimeStyles.AllowTrailingWhite | DateTimeStyles.NoCurrentDateDefault | DateTimeStyles.RoundtripKind);
+            }
+            else
+            {
+                return DateTime.ParseExact(value, allTimeFormats, DateTimeFormatInfo.InvariantInfo, DateTimeStyles.AllowLeadingWhite | DateTimeStyles.AllowTrailingWhite | DateTimeStyles.NoCurrentDateDefault);
+            }
         }
 
         internal static char ToChar(string value) {

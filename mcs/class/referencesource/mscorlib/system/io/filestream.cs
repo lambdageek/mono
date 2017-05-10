@@ -7,7 +7,7 @@
 **
 ** Class:  FileStream
 ** 
-** <OWNER>[....]</OWNER>
+** <OWNER>Microsoft</OWNER>
 **
 **
 ** Purpose: Exposes a Stream around a file, with full 
@@ -39,11 +39,11 @@ using System.Diagnostics.Tracing;
 
 /*
  * FileStream supports different modes of accessing the disk - async mode
- * and [....] mode.  They are two completely different codepaths in the
- * [....] & async methods (ie, Read/Write vs. BeginRead/BeginWrite).  File
- * handles in NT can be opened in only [....] or overlapped (async) mode,
+ * and sync mode.  They are two completely different codepaths in the
+ * sync & async methods (ie, Read/Write vs. BeginRead/BeginWrite).  File
+ * handles in NT can be opened in only sync or overlapped (async) mode,
  * and we have to deal with this pain.  Stream has implementations of
- * the [....] methods in terms of the async ones, so we'll
+ * the sync methods in terms of the async ones, so we'll
  * call through to our base class to get those methods when necessary.
  *
  * Also buffering is added into FileStream as well. Folded in the
@@ -708,28 +708,25 @@ namespace System.IO {
             // Get absolute path - Security needs this to prevent something
             // like trying to create a file in c:\tmp with the name 
             // "..\WinNT\System32\ntoskrnl.exe".  Store it for user convenience.
-            int maxPath = useLongPath ? Path.MaxLongPath : Path.MaxPath;
-            String filePath = Path.NormalizePath(path, true, maxPath);
+            int maxPath = useLongPath
+                ? PathInternal.MaxLongPath 
+                : AppContextSwitches.BlockLongPaths ? PathInternal.MaxShortPath : PathInternal.MaxLongPath;
+
+            string filePath = Path.NormalizePath(path, true, maxPath);
 
             _fileName = filePath;
 
             // Prevent access to your disk drives as raw block devices.
-            if (filePath.StartsWith("\\\\.\\", StringComparison.Ordinal))
+            //
+            // We'll allow if in full trust and not in legacy mode. You can also get device access via \\?\ and \??\ so there isn't
+            // much point in making users jump through these hoops. Blocking is pointless in full trust as well.
+            if (
+#if FEATURE_CAS_POLICY
+                (!CodeAccessSecurityEngine.QuickCheckForAllDemands() || AppContextSwitches.UseLegacyPathHandling)
+                &&
+#endif
+                filePath.StartsWith("\\\\.\\", StringComparison.Ordinal))
                 throw new ArgumentException(Environment.GetResourceString("Arg_DevicesNotSupported"));
-
-            // In 4.0, we always construct a FileIOPermission object below. 
-            // If filePath contained a ':', we would throw a NotSupportedException in 
-            // System.Security.Util.StringExpressionSet.CanonicalizePath. 
-            // If filePath contained other illegal characters, we would throw an ArgumentException in 
-            // FileIOPermission.CheckIllegalCharacters.
-            // In 4.5 we on longer construct the FileIOPermission object in full trust.
-            // To preserve the 4.0 behavior we do an explicit check for ':' here and also call Path.CheckInvalidPathChars.
-            // Note that we need to call CheckInvalidPathChars before checking for ':' because that is what FileIOPermission does.
-
-            Path.CheckInvalidPathChars(filePath, true);
-
-            if (filePath.IndexOf( ':', 2 ) != -1)
-                throw new NotSupportedException( Environment.GetResourceString( "Argument_PathFormatNotSupported" ) );
 
             bool read = false;
 
@@ -747,7 +744,12 @@ namespace System.IO {
 
             // All demands in full trust domains are no-ops, so skip 
 #if FEATURE_CAS_POLICY
-            if (!CodeAccessSecurityEngine.QuickCheckForAllDemands()) 
+            if (CodeAccessSecurityEngine.QuickCheckForAllDemands())
+            {
+                // Need to throw the same exceptions that are thrown if we actually called QuickDemand() below.
+                FileIOPermission.EmulateFileIOPermissionChecks(filePath);
+            }
+            else
 #endif // FEATURE_CAS_POLICY
             {
                 // Build up security permissions required, as well as validate we
@@ -796,7 +798,7 @@ namespace System.IO {
                 }
                 
                 AccessControlActions control = specifiedAcl ? AccessControlActions.Change : AccessControlActions.None;
-                new FileIOPermission(secAccess, control, new String[] { filePath }, false, false).Demand();
+                FileIOPermission.QuickDemand(secAccess, control, new String[] { filePath }, false, false);
 #else
 #if FEATURE_CORECLR
                 if (checkHost) {
@@ -804,7 +806,7 @@ namespace System.IO {
                     state.EnsureState();
                 }
 #else
-                new FileIOPermission(secAccess, new String[] { filePath }, false, false).Demand();
+                FileIOPermission.QuickDemand(secAccess, filePath, false, false);
 #endif // FEATURE_CORECLR
 #endif
             }
@@ -867,7 +869,7 @@ namespace System.IO {
                     {
                         try {
 #if !FEATURE_CORECLR
-                            new FileIOPermission(FileIOPermissionAccess.PathDiscovery, new String[] { _fileName }, false, false ).Demand();
+                            FileIOPermission.QuickDemand(FileIOPermissionAccess.PathDiscovery, _fileName, false, false);
 #endif
                             canGiveFullPath = true;
                         }
@@ -1202,7 +1204,7 @@ namespace System.IO {
                 FileSecurityState sourceState = new FileSecurityState(FileSecurityStateAccess.PathDiscovery, String.Empty, _fileName);
                 sourceState.EnsureState();
 #else
-                new FileIOPermission(FileIOPermissionAccess.PathDiscovery, new String[] { _fileName }, false, false).Demand();
+                FileIOPermission.QuickDemand(FileIOPermissionAccess.PathDiscovery, _fileName, false, false);
 #endif
                 return _fileName;
             }
@@ -1224,7 +1226,7 @@ namespace System.IO {
 
                 Contract.Assert((_readPos == 0 && _readLen == 0 && _writePos >= 0) || (_writePos == 0 && _readPos <= _readLen), "We're either reading or writing, but not both.");
 
-                // Verify that internal position is in [....] with the handle
+                // Verify that internal position is in sync with the handle
                 if (_exposedHandle)
                     VerifyOSHandlePosition();
 
@@ -1353,7 +1355,7 @@ namespace System.IO {
 
         // Reading is done by blocks from the file, but someone could read
         // 1 byte from the buffer then write.  At that point, the OS's file
-        // pointer is out of [....] with the stream's position.  All write 
+        // pointer is out of sync with the stream's position.  All write 
         // functions should call this function to preserve the position in the file.
         private void FlushRead() {
             Contract.Assert(_writePos == 0, "FileStream: Write buffer must be empty in FlushRead!");
@@ -1628,7 +1630,7 @@ namespace System.IO {
                 offset -= (_readLen - _readPos);
             }
 
-            // Verify that internal position is in [....] with the handle
+            // Verify that internal position is in sync with the handle
             if (_exposedHandle)
                 VerifyOSHandlePosition();
 
@@ -1945,7 +1947,7 @@ namespace System.IO {
                 // (either synchronously or asynchronously) before the first one 
                 // returns.  This would involve some sort of complex buffer locking
                 // that we probably don't want to get into, at least not in V1.
-                // If we did a [....] read to fill the buffer, we could avoid the
+                // If we did a sync read to fill the buffer, we could avoid the
                 // problem, and any async read less than 64K gets turned into a
                 // synchronous read by NT anyways...       -- 
 
@@ -2513,7 +2515,7 @@ namespace System.IO {
 
             if (r==0) {
                 hr = Marshal.GetLastWin32Error();
-                // We should never silently ---- an error here without some
+                // We should never silently swallow an error here without some
                 // extra work.  We must make sure that BeginReadCore won't return an 
                 // IAsyncResult that will cause EndRead to block, since the OS won't
                 // call AsyncFSCallback for us.  
@@ -2570,7 +2572,7 @@ namespace System.IO {
 
             if (r==0) {
                 hr = Marshal.GetLastWin32Error();
-                // We should never silently ---- an error here without some
+                // We should never silently swallow an error here without some
                 // extra work.  We must make sure that BeginWriteCore won't return an 
                 // IAsyncResult that will cause EndWrite to block, since the OS won't
                 // call AsyncFSCallback for us.  

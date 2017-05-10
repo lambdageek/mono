@@ -2,8 +2,8 @@
 // <copyright file="SqlUtil.cs" company="Microsoft">
 //     Copyright (c) Microsoft Corporation.  All rights reserved.
 // </copyright>
-// <owner current="true" primary="true">[....]</owner>
-// <owner current="true" primary="false">[....]</owner>
+// <owner current="true" primary="true">Microsoft</owner>
+// <owner current="true" primary="false">Microsoft</owner>
 //------------------------------------------------------------------------------
 
 namespace System.Data.SqlClient {
@@ -1543,7 +1543,7 @@ namespace System.Data.SqlClient {
             return Res.GetString(Res.SQL_SSPIGenerateError);
         }
         static internal string Timeout() {
-            return Res.GetString(Res.SQL_Timeout);
+            return Res.GetString(Res.SQL_Timeout_Execution);
         }
         static internal string Timeout_PreLogin_Begin() {
             return Res.GetString(Res.SQL_Timeout_PreLogin_Begin);

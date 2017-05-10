@@ -11,6 +11,11 @@ namespace System
 
     internal static class AppContextSwitches
     {
+#if MOBILE
+		public static readonly bool ThrowExceptionIfDisposedCancellationTokenSource = false;
+		public static readonly bool SetActorAsReferenceWhenCopyingClaimsIdentity = false;
+		public static readonly bool NoAsyncCurrentCulture = false;
+#else
         private static int _noAsyncCurrentCulture;
         public static bool NoAsyncCurrentCulture
         {
@@ -38,6 +43,58 @@ namespace System
             get
             {
                 return GetCachedSwitchValue(AppContextDefaultValues.SwitchPreserveEventListnerObjectIdentity, ref _preserveEventListnerObjectIdentity);
+            }
+        }
+
+        private static int _useLegacyPathHandling;
+
+        /// <summary>
+        /// Use legacy path normalization logic and blocking of extended syntax.
+        /// </summary>
+        public static bool UseLegacyPathHandling
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                return GetCachedSwitchValue(AppContextDefaultValues.SwitchUseLegacyPathHandling, ref _useLegacyPathHandling);
+            }
+        }
+
+        private static int _blockLongPaths;
+
+        /// <summary>
+        /// Throw PathTooLongException for paths greater than MAX_PATH or directories greater than 248 (as per CreateDirectory Win32 limitations)
+        /// </summary>
+        public static bool BlockLongPaths
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                return GetCachedSwitchValue(AppContextDefaultValues.SwitchBlockLongPaths, ref _blockLongPaths);
+            }
+        }
+
+        private static int _cloneActor;
+
+        /// <summary>
+        /// When copying a ClaimsIdentity.Actor this switch controls whether ClaimsIdentity.Actor should be set as a reference or the result of Actor.Clone()
+        /// </summary>
+        public static bool SetActorAsReferenceWhenCopyingClaimsIdentity
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                return GetCachedSwitchValue(AppContextDefaultValues.SwitchSetActorAsReferenceWhenCopyingClaimsIdentity, ref _cloneActor);
+            }
+        }
+
+        private static int _doNotAddrOfCspParentWindowHandle;
+        public static bool DoNotAddrOfCspParentWindowHandle
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                return GetCachedSwitchValue(AppContextDefaultValues.SwitchDoNotAddrOfCspParentWindowHandle, ref _doNotAddrOfCspParentWindowHandle);
             }
         }
 
@@ -78,5 +135,6 @@ namespace System
             switchValue = isSwitchEnabled ? 1 /*true*/ : -1 /*false*/;
             return isSwitchEnabled;
         }
+#endif
     }
 }

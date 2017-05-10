@@ -1,5 +1,5 @@
-/*
- * mono-perfcounters.c
+/**
+ * \file
  *
  * Performance counters support.
  *
@@ -30,9 +30,12 @@
 #include <mach/message.h>
 #include <mach/mach_host.h>
 #include <mach/host_info.h>
-#endif
-#if defined (__NetBSD__) || defined (__APPLE__)
 #include <sys/sysctl.h>
+#endif
+#if defined (__NetBSD__)
+#include <sys/param.h>
+#include <sys/sysctl.h>
+#include <sys/vmmeter.h>
 #endif
 #include "metadata/mono-perfcounters.h"
 #include "metadata/appdomain.h"
@@ -45,7 +48,6 @@
 #include "utils/mono-networkinterfaces.h"
 #include "utils/mono-error-internals.h"
 #include "utils/atomic.h"
-#include <mono/io-layer/io-layer.h>
 
 /* map of CounterSample.cs */
 struct _MonoCounterSample {
@@ -425,7 +427,7 @@ mono_determine_physical_ram_size (void)
 	int mib[2] = {
 		CTL_HW,
 #ifdef __NetBSD__
-		HW_PHYSMEM
+		HW_PHYSMEM64
 #else
 		HW_MEMSIZE
 #endif
@@ -474,29 +476,22 @@ mono_determine_physical_ram_available_size (void)
 #elif defined (__NetBSD__)
 	struct vmtotal vm_total;
 	guint64 page_size;
-	int mib [2];
+	int mib[2];
 	size_t len;
 
+	mib[0] = CTL_VM;
+	mib[1] = VM_METER;
 
-	mib = {
-		CTL_VM,
-#if defined (VM_METER)
-		VM_METER
-#else
-		VM_TOTAL
-#endif
-	};
 	len = sizeof (vm_total);
 	sysctl (mib, 2, &vm_total, &len, NULL, 0);
 
-	mib = {
-		CTL_HW,
-		HW_PAGESIZE
-	};
-	len = sizeof (page_size);
-	sysctl (mib, 2, &page_size, &len, NULL, 0
+	mib[0] = CTL_HW;
+	mib[1] = HW_PAGESIZE;
 
-	return ((guint64) value.t_free * page_size) / 1024;
+	len = sizeof (page_size);
+	sysctl (mib, 2, &page_size, &len, NULL, 0);
+
+	return ((guint64) vm_total.t_free * page_size) / 1024;
 #elif defined (__APPLE__)
 	mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
 	mach_port_t host = mach_host_self();
@@ -1300,7 +1295,7 @@ custom_get_impl (SharedCategory *cat, MonoString *counter, MonoString* instance,
 	SharedInstance* inst;
 	char *name;
 
-	mono_error_init (error);
+	error_init (error);
 	scounter = find_custom_counter (cat, counter);
 	if (!scounter)
 		return NULL;
@@ -1428,10 +1423,14 @@ mono_perfcounter_category_del (MonoString *name)
 	return TRUE;
 }
 
+/* this is an icall */
 MonoString*
 mono_perfcounter_category_help (MonoString *category, MonoString *machine)
 {
+	MonoError error;
+	MonoString *result = NULL;
 	const CategoryDesc *cdesc;
+	error_init (&error);
 	/* no support for counters on other machines */
 	if (mono_string_compare_ascii (machine, "."))
 		return NULL;
@@ -1440,9 +1439,15 @@ mono_perfcounter_category_help (MonoString *category, MonoString *machine)
 		SharedCategory *scat = find_custom_category (category);
 		if (!scat)
 			return NULL;
-		return mono_string_new (mono_domain_get (), custom_category_help (scat));
+		result = mono_string_new_checked (mono_domain_get (), custom_category_help (scat), &error);
+		if (mono_error_set_pending_exception (&error))
+			return NULL;
+		return result;
 	}
-	return mono_string_new (mono_domain_get (), cdesc->help);
+	result = mono_string_new_checked (mono_domain_get (), cdesc->help, &error);
+	if (mono_error_set_pending_exception (&error))
+		return NULL;
+	return result;
 }
 
 /*
@@ -1601,6 +1606,7 @@ mono_perfcounter_instance_exists (MonoString *instance, MonoString *category, Mo
 	return FALSE;
 }
 
+/* this is an icall */
 MonoArray*
 mono_perfcounter_category_names (MonoString *machine)
 {
@@ -1625,15 +1631,23 @@ mono_perfcounter_category_names (MonoString *machine)
 
 	for (i = 0; i < NUM_CATEGORIES; ++i) {
 		const CategoryDesc *cdesc = &predef_categories [i];
-		mono_array_setref (res, i, mono_string_new (domain, cdesc->name));
+		MonoString *name = mono_string_new_checked (domain, cdesc->name, &error);
+		if (!is_ok (&error))
+			goto leave;
+		mono_array_setref (res, i, name);
 	}
 	for (tmp = custom_categories; tmp; tmp = tmp->next) {
 		SharedCategory *scat = (SharedCategory *)tmp->data;
-		mono_array_setref (res, i, mono_string_new (domain, scat->name));
+		MonoString *name = mono_string_new_checked (domain, scat->name, &error);
+		if (!is_ok (&error))
+			goto leave;
+		mono_array_setref (res, i, name);
 		i++;
 	}
+leave:
 	perfctr_unlock ();
 	g_slist_free (custom_categories);
+	mono_error_set_pending_exception (&error);
 	return res;
 }
 
@@ -1659,7 +1673,10 @@ mono_perfcounter_counter_names (MonoString *category, MonoString *machine)
 			return NULL;
 		for (i = cdesc->first_counter; i < cdesc [1].first_counter; ++i) {
 			const CounterDesc *desc = &predef_counters [i];
-			mono_array_setref (res, i - cdesc->first_counter, mono_string_new (domain, desc->name));
+			MonoString *name = mono_string_new_checked (domain, desc->name, &error);
+			if (mono_error_set_pending_exception (&error))
+				return NULL;
+			mono_array_setref (res, i - cdesc->first_counter, name);
 		}
 		return res;
 	}
@@ -1675,16 +1692,18 @@ mono_perfcounter_counter_names (MonoString *category, MonoString *machine)
 		}
 
 		for (i = 0; i < scat->num_counters; ++i) {
-			mono_array_setref (res, i, mono_string_new (domain, p + 1));
+			MonoString *str = mono_string_new_checked (domain, p + 1, &error);
+			if (!is_ok (&error))
+				goto leave;
+			mono_array_setref (res, i, str);
 			p += 2; /* skip counter type */
 			p += strlen (p) + 1; /* skip counter name */
 			p += strlen (p) + 1; /* skip counter help */
 		}
-		perfctr_unlock ();
-		return res;
-	}
+	} else
+		res = mono_array_new_checked (domain, mono_get_string_class (), 0, &error);
+leave:
 	perfctr_unlock ();
-	res = mono_array_new_checked (domain, mono_get_string_class (), 0, &error);
 	mono_error_set_pending_exception (&error);
 	return res;
 }
@@ -1694,7 +1713,7 @@ get_string_array (void **array, int count, gboolean is_process, MonoError *error
 {
 	int i;
 	MonoDomain *domain = mono_domain_get ();
-	mono_error_init (error);
+	error_init (error);
 	MonoArray * res = mono_array_new_checked (mono_domain_get (), mono_get_string_class (), count, error);
 	return_val_if_nok (error, NULL);
 	for (i = 0; i < count; ++i) {
@@ -1707,9 +1726,11 @@ get_string_array (void **array, int count, gboolean is_process, MonoError *error
 			sprintf (buf, "%d", GPOINTER_TO_INT (array [i]));
 			p = buf;
 		}
-		mono_array_setref (res, i, mono_string_new (domain, p));
+		MonoString *str = mono_string_new_checked (domain, p, error);
 		if (p != buf)
 			g_free (p);
+		return_val_if_nok (error, NULL);
+		mono_array_setref (res, i, str);
 	}
 	return res;
 }
@@ -1719,12 +1740,14 @@ get_string_array_of_strings (void **array, int count, MonoError *error)
 {
 	int i;
 	MonoDomain *domain = mono_domain_get ();
-	mono_error_init (error);
+	error_init (error);
 	MonoArray * res = mono_array_new_checked (mono_domain_get (), mono_get_string_class (), count, error);
 	return_val_if_nok (error, NULL);
 	for (i = 0; i < count; ++i) {
 		char* p = (char *)array[i];
-		mono_array_setref (res, i, mono_string_new (domain, p));
+		MonoString *str = mono_string_new_checked (domain, p, error);
+		return_val_if_nok (error, NULL);
+		mono_array_setref (res, i, str);
 	}
 
 	return res;
@@ -1737,7 +1760,7 @@ get_mono_instances (MonoError *error)
 	int res;
 	void **buf = NULL;
 	MonoArray *array;
-	mono_error_init (error);
+	error_init (error);
 	do {
 		count *= 2;
 		g_free (buf);
@@ -1755,14 +1778,16 @@ get_cpu_instances (MonoError *error)
 	void **buf = NULL;
 	int i, count;
 	MonoArray *array;
-	mono_error_init (error);
+	error_init (error);
 	count = mono_cpu_count () + 1; /* +1 for "_Total" */
 	buf = g_new (void*, count);
 	for (i = 0; i < count; ++i)
 		buf [i] = GINT_TO_POINTER (i - 1); /* -1 => _Total */
 	array = get_string_array (buf, count, FALSE, error);
 	g_free (buf);
-	mono_array_setref (array, 0, mono_string_new (mono_domain_get (), "_Total"));
+	MonoString *total = mono_string_new_checked (mono_domain_get (), "_Total", error);
+	return_val_if_nok (error, NULL);
+	mono_array_setref (array, 0, total);
 	return array;
 }
 
@@ -1772,7 +1797,7 @@ get_processes_instances (MonoError *error)
 	MonoArray *array;
 	int count = 0;
 	void **buf = mono_process_list (&count);
-	mono_error_init (error);
+	error_init (error);
 	if (!buf)
 		return get_string_array (NULL, 0, FALSE, error);
 	array = get_string_array (buf, count, TRUE, error);
@@ -1785,7 +1810,7 @@ get_networkinterface_instances (MonoError *error)
 {
 	MonoArray *array;
 	int count = 0;
-	mono_error_init (error);
+	error_init (error);
 	void **buf = mono_networkinterface_list (&count);
 	if (!buf)
 		return get_string_array_of_strings (NULL, 0, error);
@@ -1798,7 +1823,7 @@ static MonoArray*
 get_custom_instances (MonoString *category, MonoError *error)
 {
 	SharedCategory *scat;
-	mono_error_init (error);
+	error_init (error);
 	scat = find_custom_category (category);
 	if (scat) {
 		GSList *list = get_custom_instances_list (scat);
@@ -1811,7 +1836,12 @@ get_custom_instances (MonoString *category, MonoError *error)
 		}
 		for (tmp = list; tmp; tmp = tmp->next) {
 			SharedInstance *inst = (SharedInstance *)tmp->data;
-			mono_array_setref (array, i, mono_string_new (mono_domain_get (), inst->instance_name));
+			MonoString *str = mono_string_new_checked (mono_domain_get (), inst->instance_name, error);
+			if (!is_ok (error)) {
+				g_slist_free (list);
+				return NULL;
+			}
+			mono_array_setref (array, i, str);
 			i++;
 		}
 		g_slist_free (list);

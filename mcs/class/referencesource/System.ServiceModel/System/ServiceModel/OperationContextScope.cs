@@ -11,12 +11,14 @@ namespace System.ServiceModel
     public sealed class OperationContextScope : IDisposable
     {
         [ThreadStatic]
-        static OperationContextScope currentScope;
+        static OperationContextScope legacyCurrentScope;
+
+        static AsyncLocal<OperationContextScope> currentScope = new AsyncLocal<OperationContextScope>();
 
         OperationContext currentContext;
         bool disposed;
         readonly OperationContext originalContext = OperationContext.Current;
-        readonly OperationContextScope originalScope = OperationContextScope.currentScope;
+        readonly OperationContextScope originalScope = OperationContextScope.CurrentScope;
         readonly Thread thread = Thread.CurrentThread;
 
         public OperationContextScope(IContextChannel channel)
@@ -27,6 +29,26 @@ namespace System.ServiceModel
         public OperationContextScope(OperationContext context)
         {
             this.PushContext(context);
+        }
+
+        private static OperationContextScope CurrentScope
+        {
+            get
+            {
+                return ServiceModelAppSettings.DisableOperationContextAsyncFlow ? legacyCurrentScope : currentScope.Value;
+            }
+
+            set
+            {
+                if (ServiceModelAppSettings.DisableOperationContextAsyncFlow)
+                {
+                    legacyCurrentScope = value;
+                }
+                else
+                {
+                    currentScope.Value = value;
+                }
+            }
         }
 
         public void Dispose()
@@ -40,23 +62,31 @@ namespace System.ServiceModel
 
         void PushContext(OperationContext context)
         {
+            bool isAsyncFlowEnabled = OperationContext.ShouldUseAsyncLocalContext;
+
             this.currentContext = context;
-            OperationContextScope.currentScope = this;
+
+            if (isAsyncFlowEnabled)
+            {
+                OperationContext.EnableAsyncFlow(this.currentContext);
+            }
+
+            CurrentScope = this;
             OperationContext.Current = this.currentContext;
         }
 
         void PopContext()
         {
-            if (this.thread != Thread.CurrentThread)
+            if (ServiceModelAppSettings.DisableOperationContextAsyncFlow && this.thread != Thread.CurrentThread)
                 throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new InvalidOperationException(SR.GetString(SR.SFxInvalidContextScopeThread0)));
 
-            if (OperationContextScope.currentScope != this)
+            if (CurrentScope != this)
                 throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new InvalidOperationException(SR.GetString(SR.SFxInterleavedContextScopes0)));
 
             if (OperationContext.Current != this.currentContext)
                 throw DiagnosticUtility.ExceptionUtility.ThrowHelperError(new InvalidOperationException(SR.GetString(SR.SFxContextModifiedInsideScope0)));
 
-            OperationContextScope.currentScope = this.originalScope;
+            CurrentScope = this.originalScope;
             OperationContext.Current = this.originalContext;
 
             if (this.currentContext != null)

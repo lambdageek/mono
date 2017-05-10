@@ -1,5 +1,6 @@
-/*
- * mono-threads.c: Low-level threading
+/**
+ * \file
+ * Low-level threading
  *
  * Author:
  *	Rodrigo Kumpera (kumpera@gmail.com)
@@ -29,6 +30,9 @@
 #include <mono/utils/mono-coop-mutex.h>
 #include <mono/utils/mono-coop-semaphore.h>
 #include <mono/utils/mono-threads-coop.h>
+#include <mono/utils/mono-threads-debug.h>
+#include <mono/utils/os-event.h>
+#include <mono/utils/w32api.h>
 
 #include <errno.h>
 
@@ -62,7 +66,7 @@ static MonoThreadInfoCallbacks threads_callbacks;
 static MonoThreadInfoRuntimeCallbacks runtime_callbacks;
 static MonoNativeTlsKey thread_info_key, thread_exited_key;
 #ifdef HAVE_KW_THREAD
-static __thread guint32 tls_small_id MONO_TLS_FAST;
+static __thread guint32 tls_small_id;
 #else
 static MonoNativeTlsKey small_id_key;
 #endif
@@ -71,14 +75,18 @@ static gboolean mono_threads_inited = FALSE;
 
 static MonoSemType suspend_semaphore;
 static size_t pending_suspends;
-static gboolean unified_suspend_enabled;
+
+static mono_mutex_t join_mutex;
 
 #define mono_thread_info_run_state(info) (((MonoThreadInfo*)info)->thread_state & THREAD_STATE_MASK)
 
 /*warn at 50 ms*/
-#define SLEEP_DURATION_BEFORE_WARNING (10)
-/*abort at 1 sec*/
-#define SLEEP_DURATION_BEFORE_ABORT 200
+#define SLEEP_DURATION_BEFORE_WARNING (50)
+/*never aborts */
+#define SLEEP_DURATION_BEFORE_ABORT MONO_INFINITE_WAIT
+
+static guint32 sleepWarnDuration = SLEEP_DURATION_BEFORE_WARNING,
+	    sleepAbortDuration = SLEEP_DURATION_BEFORE_ABORT;
 
 static int suspend_posts, resume_posts, abort_posts, waits_done, pending_ops;
 
@@ -115,7 +123,7 @@ begin_async_suspend (MonoThreadInfo *info, gboolean interrupt_kernel)
 		return TRUE;
 	}
 
-	return mono_threads_core_begin_async_suspend (info, interrupt_kernel);
+	return mono_threads_suspend_begin_async_suspend (info, interrupt_kernel);
 }
 
 static gboolean
@@ -126,7 +134,7 @@ check_async_suspend (MonoThreadInfo *info)
 		return TRUE;
 	}
 
-	return mono_threads_core_check_suspend_result (info);
+	return mono_threads_suspend_check_suspend_result (info);
 }
 
 static void
@@ -135,7 +143,7 @@ resume_async_suspended (MonoThreadInfo *info)
 	if (mono_threads_is_coop_enabled ())
 		g_assert_not_reached ();
 
-	g_assert (mono_threads_core_begin_async_resume (info));
+	g_assert (mono_threads_suspend_begin_async_resume (info));
 }
 
 static void
@@ -235,14 +243,14 @@ mono_threads_wait_pending_operations (void)
 		for (i = 0; i < pending_suspends; ++i) {
 			THREADS_SUSPEND_DEBUG ("[INITIATOR-WAIT-WAITING]\n");
 			InterlockedIncrement (&waits_done);
-			if (!mono_os_sem_timedwait (&suspend_semaphore, SLEEP_DURATION_BEFORE_ABORT, MONO_SEM_FLAGS_NONE))
+			if (mono_os_sem_timedwait (&suspend_semaphore, sleepAbortDuration, MONO_SEM_FLAGS_NONE) == MONO_SEM_TIMEDWAIT_RET_SUCCESS)
 				continue;
 			mono_stopwatch_stop (&suspension_time);
 
 			dump_threads ();
 
 			MOSTLY_ASYNC_SAFE_PRINTF ("WAITING for %d threads, got %d suspended\n", (int)pending_suspends, i);
-			g_error ("suspend_thread suspend took %d ms, which is more than the allowed %d ms", (int)mono_stopwatch_elapsed_ms (&suspension_time), SLEEP_DURATION_BEFORE_ABORT);
+			g_error ("suspend_thread suspend took %d ms, which is more than the allowed %d ms", (int)mono_stopwatch_elapsed_ms (&suspension_time), sleepAbortDuration);
 		}
 		mono_stopwatch_stop (&suspension_time);
 		THREADS_SUSPEND_DEBUG ("Suspending %d threads took %d ms.\n", (int)pending_suspends, (int)mono_stopwatch_elapsed_ms (&suspension_time));
@@ -256,8 +264,6 @@ mono_threads_wait_pending_operations (void)
 
 
 //Thread initialization code
-
-static void mono_threads_unregister_current_thread (MonoThreadInfo *info);
 
 static inline void
 mono_hazard_pointer_clear_all (MonoThreadHazardPointers *hp, int retain)
@@ -276,9 +282,9 @@ If return non null Hazard Pointer 1 holds the return value.
 MonoThreadInfo*
 mono_thread_info_lookup (MonoNativeThreadId id)
 {
-		MonoThreadHazardPointers *hp = mono_hazard_pointer_get ();
+	MonoThreadHazardPointers *hp = mono_hazard_pointer_get ();
 
-	if (!mono_lls_find (&thread_list, hp, (uintptr_t)id, HAZARD_FREE_ASYNC_CTX)) {
+	if (!mono_lls_find (&thread_list, hp, (uintptr_t)id)) {
 		mono_hazard_pointer_clear_all (hp, -1);
 		return NULL;
 	} 
@@ -292,7 +298,7 @@ mono_thread_info_insert (MonoThreadInfo *info)
 {
 	MonoThreadHazardPointers *hp = mono_hazard_pointer_get ();
 
-	if (!mono_lls_insert (&thread_list, hp, (MonoLinkedListSetNode*)info, HAZARD_FREE_SAFE_CTX)) {
+	if (!mono_lls_insert (&thread_list, hp, (MonoLinkedListSetNode*)info)) {
 		mono_hazard_pointer_clear_all (hp, -1);
 		return FALSE;
 	} 
@@ -308,7 +314,7 @@ mono_thread_info_remove (MonoThreadInfo *info)
 	gboolean res;
 
 	THREADS_DEBUG ("removing info %p\n", info);
-	res = mono_lls_remove (&thread_list, hp, (MonoLinkedListSetNode*)info, HAZARD_FREE_SAFE_CTX);
+	res = mono_lls_remove (&thread_list, hp, (MonoLinkedListSetNode*)info);
 	mono_hazard_pointer_clear_all (hp, -1);
 	return res;
 }
@@ -319,7 +325,7 @@ free_thread_info (gpointer mem)
 	MonoThreadInfo *info = (MonoThreadInfo *) mem;
 
 	mono_os_sem_destroy (&info->resume_semaphore);
-	mono_threads_platform_free (info);
+	mono_threads_suspend_free (info);
 
 	g_free (info);
 }
@@ -336,6 +342,17 @@ mono_thread_info_register_small_id (void)
 	return small_id;
 }
 
+static void
+thread_handle_destroy (gpointer data)
+{
+	MonoThreadHandle *thread_handle;
+
+	thread_handle = (MonoThreadHandle*) data;
+
+	mono_os_event_destroy (&thread_handle->event);
+	g_free (thread_handle);
+}
+
 static void*
 register_thread (MonoThreadInfo *info, gpointer baseptr)
 {
@@ -345,6 +362,10 @@ register_thread (MonoThreadInfo *info, gpointer baseptr)
 	gboolean result;
 	mono_thread_info_set_tid (info, mono_native_thread_id_get ());
 	info->small_id = small_id;
+
+	info->handle = g_new0 (MonoThreadHandle, 1);
+	mono_refcount_init (info->handle, thread_handle_destroy);
+	mono_os_event_init (&info->handle->event, FALSE);
 
 	mono_os_sem_init (&info->resume_semaphore, 0);
 
@@ -356,6 +377,7 @@ register_thread (MonoThreadInfo *info, gpointer baseptr)
 	if (threads_callbacks.thread_register) {
 		if (threads_callbacks.thread_register (info, baseptr) == NULL) {
 			// g_warning ("thread registation failed\n");
+			mono_native_tls_set_value (thread_info_key, NULL);
 			g_free (info);
 			return NULL;
 		}
@@ -369,7 +391,7 @@ register_thread (MonoThreadInfo *info, gpointer baseptr)
 
 	info->stackdata = g_byte_array_new ();
 
-	mono_threads_platform_register (info);
+	mono_threads_suspend_register (info);
 
 	/*
 	Transition it before taking any locks or publishing itself to reduce the chance
@@ -390,14 +412,24 @@ static void
 mono_thread_info_suspend_lock_with_info (MonoThreadInfo *info);
 
 static void
+mono_threads_signal_thread_handle (MonoThreadHandle* thread_handle);
+
+static void
 unregister_thread (void *arg)
 {
 	gpointer gc_unsafe_stackdata;
 	MonoThreadInfo *info;
 	int small_id;
+	gboolean result;
+	gpointer handle;
 
 	info = (MonoThreadInfo *) arg;
 	g_assert (info);
+	g_assert (mono_thread_info_is_current (info));
+	g_assert (mono_thread_info_is_live (info));
+
+	/* Pump the HP queue while the thread is alive.*/
+	mono_thread_hazardous_try_free_some ();
 
 	small_id = info->small_id;
 
@@ -409,8 +441,6 @@ unregister_thread (void *arg)
 
 	mono_native_tls_set_value (thread_exited_key, GUINT_TO_POINTER (1));
 
-	mono_threads_core_unregister (info);
-
 	/*
 	 * TLS destruction order is not reliable so small_id might be cleaned up
 	 * before us.
@@ -418,6 +448,10 @@ unregister_thread (void *arg)
 #ifndef HAVE_KW_THREAD
 	mono_native_tls_set_value (small_id_key, GUINT_TO_POINTER (info->small_id + 1));
 #endif
+
+	/* we need to duplicate it, as the info->handle is going
+	 * to be closed when unregistering from the platform */
+	handle = mono_threads_open_thread_handle (info->handle);
 
 	/*
 	First perform the callback that requires no locks.
@@ -437,7 +471,13 @@ unregister_thread (void *arg)
 	*/
 	if (threads_callbacks.thread_unregister)
 		threads_callbacks.thread_unregister (info);
-	mono_threads_unregister_current_thread (info);
+
+	/* The thread is no longer active, so unref its handle */
+	mono_threads_close_thread_handle (info->handle);
+	info->handle = NULL;
+
+	result = mono_thread_info_remove (info);
+	g_assert (result);
 	mono_threads_transition_detach (info);
 
 	mono_thread_info_suspend_unlock ();
@@ -446,10 +486,12 @@ unregister_thread (void *arg)
 
 	/*now it's safe to free the thread info.*/
 	mono_thread_hazardous_try_free (info, free_thread_info);
-	/* Pump the HP queue */
-	mono_thread_hazardous_try_free_some ();
 
 	mono_thread_small_id_free (small_id);
+
+	mono_threads_signal_thread_handle (handle);
+
+	mono_threads_close_thread_handle (handle);
 }
 
 static void
@@ -471,20 +513,6 @@ thread_exited_dtor (void *arg)
 	 */
 	mono_native_tls_set_value (thread_exited_key, GUINT_TO_POINTER (1));
 #endif
-}
-
-/**
- * Removes the current thread from the thread list.
- * This must be called from the thread unregister callback and nowhere else.
- * The current thread must be passed as TLS might have already been cleaned up.
-*/
-static void
-mono_threads_unregister_current_thread (MonoThreadInfo *info)
-{
-	gboolean result;
-	g_assert (mono_thread_info_get_tid (info) == mono_native_thread_id_get ());
-	result = mono_thread_info_remove (info);
-	g_assert (result);
 }
 
 MonoThreadInfo*
@@ -633,17 +661,32 @@ mono_thread_info_is_exiting (void)
 	return FALSE;
 }
 
+#ifndef HOST_WIN32
+static void
+thread_info_key_dtor (void *arg)
+{
+	/* Put the MonoThreadInfo back for the duration of the
+	 * unregister code.  In some circumstances the thread needs to
+	 * take the GC lock which may block which requires a coop
+	 * state transition. */
+	mono_native_tls_set_value (thread_info_key, arg);
+	unregister_thread (arg);
+	mono_native_tls_set_value (thread_info_key, NULL);
+}
+#endif
+
 void
 mono_threads_init (MonoThreadInfoCallbacks *callbacks, size_t info_size)
 {
 	gboolean res;
 	threads_callbacks = *callbacks;
 	thread_info_size = info_size;
+	char *sleepLimit;
 #ifdef HOST_WIN32
 	res = mono_native_tls_alloc (&thread_info_key, NULL);
 	res = mono_native_tls_alloc (&thread_exited_key, NULL);
 #else
-	res = mono_native_tls_alloc (&thread_info_key, (void *) unregister_thread);
+	res = mono_native_tls_alloc (&thread_info_key, (void *) thread_info_key_dtor);
 	res = mono_native_tls_alloc (&thread_exited_key, (void *) thread_exited_dtor);
 #endif
 
@@ -654,16 +697,26 @@ mono_threads_init (MonoThreadInfoCallbacks *callbacks, size_t info_size)
 #endif
 	g_assert (res);
 
-	unified_suspend_enabled = g_getenv ("MONO_ENABLE_UNIFIED_SUSPEND") != NULL || mono_threads_is_coop_enabled ();
+	if ((sleepLimit = g_getenv ("MONO_SLEEP_ABORT_LIMIT")) != NULL) {
+		errno = 0;
+		long threshold = strtol(sleepLimit, NULL, 10);
+		if ((errno == 0) && (threshold >= 40))  {
+			sleepAbortDuration = threshold;
+			sleepWarnDuration = threshold / 20;
+		} else
+			g_warning("MONO_SLEEP_ABORT_LIMIT must be a number >= 40");
+		g_free (sleepLimit);
+	}
 
 	mono_os_sem_init (&global_suspend_semaphore, 1);
 	mono_os_sem_init (&suspend_semaphore, 0);
+	mono_os_mutex_init (&join_mutex);
 
-	mono_lls_init (&thread_list, NULL, HAZARD_FREE_NO_LOCK);
+	mono_lls_init (&thread_list, NULL);
 	mono_thread_smr_init ();
-	mono_threads_init_platform ();
-	mono_threads_init_coop ();
-	mono_threads_init_abort_syscall ();
+	mono_threads_suspend_init ();
+	mono_threads_coop_init ();
+	mono_threads_platform_init ();
 
 #if defined(__MACH__)
 	mono_mach_init (thread_info_key);
@@ -672,6 +725,12 @@ mono_threads_init (MonoThreadInfoCallbacks *callbacks, size_t info_size)
 	mono_threads_inited = TRUE;
 
 	g_assert (sizeof (MonoNativeThreadId) <= sizeof (uintptr_t));
+}
+
+void
+mono_threads_signals_init (void)
+{
+	mono_threads_suspend_init_signals ();
 }
 
 void
@@ -686,60 +745,10 @@ mono_threads_get_runtime_callbacks (void)
 	return &runtime_callbacks;
 }
 
-/*
-Signal that the current thread wants to be suspended.
-This function can be called without holding the suspend lock held.
-To finish suspending, call mono_suspend_check.
-*/
-void
-mono_thread_info_begin_self_suspend (void)
-{
-	MonoThreadInfo *info = mono_thread_info_current_unchecked ();
-	if (!info)
-		return;
-
-	THREADS_SUSPEND_DEBUG ("BEGIN SELF SUSPEND OF %p\n", info);
-	mono_threads_transition_request_self_suspension (info);
-}
-
-void
-mono_thread_info_end_self_suspend (void)
-{
-	MonoThreadInfo *info;
-
-	info = mono_thread_info_current ();
-	if (!info)
-		return;
-	THREADS_SUSPEND_DEBUG ("FINISH SELF SUSPEND OF %p\n", info);
-
-	mono_threads_get_runtime_callbacks ()->thread_state_init (&info->thread_saved_state [SELF_SUSPEND_STATE_INDEX]);
-
-	/* commit the saved state and notify others if needed */
-	switch (mono_threads_transition_state_poll (info)) {
-	case SelfSuspendResumed:
-		return;
-	case SelfSuspendWait:
-		mono_thread_info_wait_for_resume (info);
-		break;
-	case SelfSuspendNotifyAndWait:
-		mono_threads_notify_initiator_of_suspend (info);
-		mono_thread_info_wait_for_resume (info);
-		mono_threads_notify_initiator_of_resume (info);
-		break;
-	}
-}
-
 static gboolean
 mono_thread_info_core_resume (MonoThreadInfo *info)
 {
 	gboolean res = FALSE;
-	if (info->create_suspended) {
-		MonoNativeThreadId tid = mono_thread_info_get_tid (info);
-		/* Have to special case this, as the normal suspend/resume pair are racy, they don't work if he resume is received before the suspend */
-		info->create_suspended = FALSE;
-		mono_threads_core_resume_created (info, tid);
-		return TRUE;
-	}
 
 	switch (mono_threads_transition_request_resume (info)) {
 	case ResumeError:
@@ -828,6 +837,9 @@ is_thread_in_critical_region (MonoThreadInfo *info)
 	gpointer stack_start;
 	MonoThreadUnwindState *state;
 
+	if (mono_threads_platform_in_critical_region (mono_thread_info_get_tid (info)))
+		return TRUE;
+
 	/* Are we inside a system critical region? */
 	if (info->inside_critical_region)
 		return TRUE;
@@ -846,6 +858,9 @@ is_thread_in_critical_region (MonoThreadInfo *info)
 	/* altstack signal handler, sgen can't handle them, so we treat them as critical */
 	if (stack_start < info->stack_start_limit || stack_start >= info->stack_end)
 		return TRUE;
+
+	if (threads_callbacks.ip_in_critical_region)
+		return threads_callbacks.ip_in_critical_region ((MonoDomain *) state->unwind_data [MONO_UNWIND_DATA_DOMAIN], (char *) MONO_CONTEXT_GET_IP (&state->ctx));
 
 	ji = mono_jit_info_table_find (
 		(MonoDomain *) state->unwind_data [MONO_UNWIND_DATA_DOMAIN],
@@ -891,7 +906,7 @@ suspend_sync (MonoNativeThreadId tid, gboolean interrupt_kernel)
 		break;
 	case AsyncSuspendBlocking:
 		if (interrupt_kernel)
-			mono_threads_core_abort_syscall (info);
+			mono_threads_suspend_abort_syscall (info);
 
 		break;
 	default:
@@ -970,6 +985,7 @@ mono_thread_info_safe_suspend_and_run (MonoNativeThreadId id, gboolean interrupt
 		mono_threads_wait_pending_operations ();
 		break;
 	case KeepSuspended:
+		g_assert (!mono_threads_is_coop_enabled ());
 		break;
 	default:
 		g_error ("Invalid suspend_and_run callback return value %d", result);
@@ -991,8 +1007,12 @@ currently used only to deliver exceptions.
 void
 mono_thread_info_setup_async_call (MonoThreadInfo *info, void (*target_func)(void*), void *user_data)
 {
-	/* An async call can only be setup on an async suspended thread */
-	g_assert (mono_thread_info_run_state (info) == STATE_ASYNC_SUSPENDED);
+	if (!mono_threads_is_coop_enabled ()) {
+		/* In non-coop mode, an async call can only be setup on an async suspended thread, but in coop mode, a thread
+		 * may be in blocking state, and will execute the async call when leaving the safepoint, leaving a gc safe
+		 * region or entering a gc unsafe region */
+		g_assert (mono_thread_info_run_state (info) == STATE_ASYNC_SUSPENDED);
+	}
 	/*FIXME this is a bad assert, we probably should do proper locking and fail if one is already set*/
 	g_assert (!info->async_target);
 	info->async_target = target_func;
@@ -1010,6 +1030,8 @@ static void
 mono_thread_info_suspend_lock_with_info (MonoThreadInfo *info)
 {
 	g_assert (info);
+	g_assert (mono_thread_info_is_current (info));
+	g_assert (mono_thread_info_is_live (info));
 
 	MONO_ENTER_GC_SAFE_WITH_INFO(info);
 
@@ -1047,7 +1069,7 @@ mono_thread_info_abort_socket_syscall_for_close (MonoNativeThreadId tid)
 	MonoThreadHazardPointers *hp;
 	MonoThreadInfo *info;
 
-	if (tid == mono_native_thread_id_get () || !mono_threads_core_needs_abort_syscall ())
+	if (tid == mono_native_thread_id_get ())
 		return;
 
 	hp = mono_hazard_pointer_get ();
@@ -1063,19 +1085,13 @@ mono_thread_info_abort_socket_syscall_for_close (MonoNativeThreadId tid)
 	mono_thread_info_suspend_lock ();
 	mono_threads_begin_global_suspend ();
 
-	mono_threads_core_abort_syscall (info);
+	mono_threads_suspend_abort_syscall (info);
 	mono_threads_wait_pending_operations ();
 
 	mono_hazard_pointer_clear (hp, 1);
 
 	mono_threads_end_global_suspend ();
 	mono_thread_info_suspend_unlock ();
-}
-
-gboolean
-mono_thread_info_unified_management_enabled (void)
-{
-	return unified_suspend_enabled;
 }
 
 /*
@@ -1105,18 +1121,6 @@ mono_thread_info_is_async_context (void)
 }
 
 /*
- * mono_threads_create_thread:
- *
- *   Create a new thread executing START with argument ARG. Store its id into OUT_TID.
- * Returns: a windows or io-layer handle for the thread.
- */
-HANDLE
-mono_threads_create_thread (LPTHREAD_START_ROUTINE start, gpointer arg, MonoThreadParm *tp, MonoNativeThreadId *out_tid)
-{
-	return mono_threads_core_create_thread (start, arg, tp, out_tid);
-}
-
-/*
  * mono_thread_info_get_stack_bounds:
  *
  *   Return the address and size of the current threads stack. Return NULL as the 
@@ -1126,7 +1130,7 @@ void
 mono_thread_info_get_stack_bounds (guint8 **staddr, size_t *stsize)
 {
 	guint8 *current = (guint8 *)&stsize;
-	mono_threads_core_get_stack_bounds (staddr, stsize);
+	mono_threads_platform_get_stack_bounds (staddr, stsize);
 	if (!*staddr)
 		return;
 
@@ -1140,8 +1144,9 @@ mono_thread_info_get_stack_bounds (guint8 **staddr, size_t *stsize)
 gboolean
 mono_thread_info_yield (void)
 {
-	return mono_threads_core_yield ();
+	return mono_threads_platform_yield ();
 }
+
 static mono_lazy_init_t sleep_init = MONO_LAZY_INIT_STATUS_NOT_INITIALIZED;
 static MonoCoopMutex sleep_mutex;
 static MonoCoopCond sleep_cond;
@@ -1166,22 +1171,22 @@ sleep_interruptable (guint32 ms, gboolean *alerted)
 {
 	gint64 now, end;
 
-	g_assert (INFINITE == G_MAXUINT32);
+	g_assert (MONO_INFINITE_WAIT == G_MAXUINT32);
 
 	g_assert (alerted);
 	*alerted = FALSE;
 
-	if (ms != INFINITE)
-		end = mono_100ns_ticks () + (ms * 1000 * 10);
+	if (ms != MONO_INFINITE_WAIT)
+		end = mono_msec_ticks() + ms;
 
 	mono_lazy_initialize (&sleep_init, sleep_initialize);
 
 	mono_coop_mutex_lock (&sleep_mutex);
 
 	for (;;) {
-		if (ms != INFINITE) {
-			now = mono_100ns_ticks ();
-			if (now > end)
+		if (ms != MONO_INFINITE_WAIT) {
+			now = mono_msec_ticks();
+			if (now >= end)
 				break;
 		}
 
@@ -1191,8 +1196,8 @@ sleep_interruptable (guint32 ms, gboolean *alerted)
 			return WAIT_IO_COMPLETION;
 		}
 
-		if (ms != INFINITE)
-			mono_coop_cond_timedwait (&sleep_cond, &sleep_mutex, (end - now) / 10 / 1000);
+		if (ms != MONO_INFINITE_WAIT)
+			mono_coop_cond_timedwait (&sleep_cond, &sleep_mutex, end - now);
 		else
 			mono_coop_cond_wait (&sleep_cond, &sleep_mutex);
 
@@ -1228,7 +1233,7 @@ mono_thread_info_sleep (guint32 ms, gboolean *alerted)
 
 	MONO_ENTER_GC_SAFE;
 
-	if (ms == INFINITE) {
+	if (ms == MONO_INFINITE_WAIT) {
 		do {
 #ifdef HOST_WIN32
 			Sleep (G_MAXUINT32);
@@ -1305,6 +1310,10 @@ mono_thread_info_tls_set (THREAD_INFO_TYPE *info, MonoTlsKey key, gpointer value
 	((MonoThreadInfo*)info)->tls [key] = value;
 }
 
+#if defined(__native_client__)
+void nacl_shutdown_gc_thread(void);
+#endif
+
 /*
  * mono_thread_info_exit:
  *
@@ -1312,35 +1321,39 @@ mono_thread_info_tls_set (THREAD_INFO_TYPE *info, MonoTlsKey key, gpointer value
  * This function doesn't return.
  */
 void
-mono_thread_info_exit (void)
+mono_thread_info_exit (gsize exit_code)
 {
-	mono_threads_core_exit (0);
-}
+#if defined(__native_client__)
+	nacl_shutdown_gc_thread();
+#endif
 
-/*
- * mono_thread_info_open_handle:
- *
- *   Return a io-layer/win32 handle for the current thread.
- * The handle need to be closed by calling CloseHandle () when it is no
- * longer needed.
- */
-HANDLE
-mono_thread_info_open_handle (void)
-{
-	return mono_threads_core_open_handle ();
+	mono_thread_info_detach ();
+
+	mono_threads_platform_exit (0);
 }
 
 /*
  * mono_threads_open_thread_handle:
  *
- *   Return a io-layer/win32 handle for the thread identified by HANDLE/TID.
- * The handle need to be closed by calling CloseHandle () when it is no
- * longer needed.
+ *  Duplicate the handle. The handle needs to be closed by calling
+ *  mono_threads_close_thread_handle () when it is no longer needed.
  */
-HANDLE
-mono_threads_open_thread_handle (HANDLE handle, MonoNativeThreadId tid)
+MonoThreadHandle*
+mono_threads_open_thread_handle (MonoThreadHandle *thread_handle)
 {
-	return mono_threads_core_open_thread_handle (handle, tid);
+	return mono_refcount_inc (thread_handle);
+}
+
+void
+mono_threads_close_thread_handle (MonoThreadHandle *thread_handle)
+{
+	mono_refcount_dec (thread_handle);
+}
+
+static void
+mono_threads_signal_thread_handle (MonoThreadHandle* thread_handle)
+{
+	mono_os_event_set (&thread_handle->event);
 }
 
 #define INTERRUPT_STATE ((MonoThreadInfoInterruptToken*) (size_t) -1)
@@ -1547,4 +1560,71 @@ gboolean
 mono_thread_info_is_current (MonoThreadInfo *info)
 {
 	return mono_thread_info_get_tid (info) == mono_native_thread_id_get ();
+}
+
+MonoThreadInfoWaitRet
+mono_thread_info_wait_one_handle (MonoThreadHandle *thread_handle, guint32 timeout, gboolean alertable)
+{
+	MonoOSEventWaitRet res;
+
+	res = mono_os_event_wait_one (&thread_handle->event, timeout, alertable);
+	if (res == MONO_OS_EVENT_WAIT_RET_SUCCESS_0)
+		return MONO_THREAD_INFO_WAIT_RET_SUCCESS_0;
+	else if (res == MONO_OS_EVENT_WAIT_RET_ALERTED)
+		return MONO_THREAD_INFO_WAIT_RET_ALERTED;
+	else if (res == MONO_OS_EVENT_WAIT_RET_TIMEOUT)
+		return MONO_THREAD_INFO_WAIT_RET_TIMEOUT;
+	else
+		g_error ("%s: unknown res value %d", __func__, res);
+}
+
+MonoThreadInfoWaitRet
+mono_thread_info_wait_multiple_handle (MonoThreadHandle **thread_handles, gsize nhandles, MonoOSEvent *background_change_event, gboolean waitall, guint32 timeout, gboolean alertable)
+{
+	MonoOSEventWaitRet res;
+	MonoOSEvent *thread_events [MONO_OS_EVENT_WAIT_MAXIMUM_OBJECTS];
+	gint i;
+
+	g_assert (nhandles <= MONO_OS_EVENT_WAIT_MAXIMUM_OBJECTS);
+	if (background_change_event)
+		g_assert (nhandles <= MONO_OS_EVENT_WAIT_MAXIMUM_OBJECTS - 1);
+
+	for (i = 0; i < nhandles; ++i)
+		thread_events [i] = &thread_handles [i]->event;
+
+	if (background_change_event)
+		thread_events [nhandles ++] = background_change_event;
+
+	res = mono_os_event_wait_multiple (thread_events, nhandles, waitall, timeout, alertable);
+	if (res >= MONO_OS_EVENT_WAIT_RET_SUCCESS_0 && res <= MONO_OS_EVENT_WAIT_RET_SUCCESS_0 + nhandles - 1)
+		return MONO_THREAD_INFO_WAIT_RET_SUCCESS_0 + (res - MONO_OS_EVENT_WAIT_RET_SUCCESS_0);
+	else if (res == MONO_OS_EVENT_WAIT_RET_ALERTED)
+		return MONO_THREAD_INFO_WAIT_RET_ALERTED;
+	else if (res == MONO_OS_EVENT_WAIT_RET_TIMEOUT)
+		return MONO_THREAD_INFO_WAIT_RET_TIMEOUT;
+	else
+		g_error ("%s: unknown res value %d", __func__, res);
+}
+
+/*
+ * mono_threads_join_mutex:
+ *
+ *   This mutex is used to avoid races between pthread_create () and pthread_join () on osx, see
+ * https://bugzilla.xamarin.com/show_bug.cgi?id=50529
+ * The code inside the lock should not block.
+ */
+void
+mono_threads_join_lock (void)
+{
+#ifdef TARGET_OSX
+	mono_os_mutex_lock (&join_mutex);
+#endif
+}
+
+void
+mono_threads_join_unlock (void)
+{
+#ifdef TARGET_OSX
+	mono_os_mutex_unlock (&join_mutex);
+#endif
 }

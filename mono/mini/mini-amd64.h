@@ -1,3 +1,7 @@
+/**
+ * \file
+ */
+
 #ifndef __MONO_MINI_AMD64_H__
 #define __MONO_MINI_AMD64_H__
 
@@ -46,6 +50,36 @@ void win32_seh_set_handler(int type, MonoW32ExceptionHandler handler);
 #endif
 
 LONG CALLBACK seh_handler(EXCEPTION_POINTERS* ep);
+
+typedef struct {
+	SRWLOCK lock;
+	PVOID handle;
+	gsize begin_range;
+	gsize end_range;
+	PRUNTIME_FUNCTION rt_funcs;
+	DWORD rt_funcs_current_count;
+	DWORD rt_funcs_max_count;
+} DynamicFunctionTableEntry;
+
+#define MONO_UNWIND_INFO_RT_FUNC_SIZE 128
+
+// On Win8/Win2012Server and later we can use dynamic growable function tables
+// instead of RtlInstallFunctionTableCallback. This gives us the benefit to
+// include all needed unwind upon registration.
+typedef DWORD (NTAPI* RtlAddGrowableFunctionTablePtr)(
+    PVOID * DynamicTable,
+    PRUNTIME_FUNCTION FunctionTable,
+    DWORD EntryCount,
+    DWORD MaximumEntryCount,
+    ULONG_PTR RangeBase,
+    ULONG_PTR RangeEnd);
+
+typedef VOID (NTAPI* RtlGrowFunctionTablePtr)(
+    PVOID DynamicTable,
+    DWORD NewEntryCount);
+
+typedef VOID (NTAPI* RtlDeleteGrowableFunctionTablePtr)(
+    PVOID DynamicTable);
 
 #endif /* HOST_WIN32 */
 
@@ -178,7 +212,7 @@ typedef struct MonoCompileArch {
 	gint32 async_point_count;
 	gpointer vret_addr_loc;
 #ifdef HOST_WIN32
-	gpointer	unwindinfo;
+	gpointer unwindinfo;
 #endif
 	gpointer seq_point_info_var;
 	gpointer ss_trigger_page_var;
@@ -188,12 +222,20 @@ typedef struct MonoCompileArch {
 } MonoCompileArch;
 
 #ifdef TARGET_WIN32
-#define PARAM_REGS 4
-#define FLOAT_PARAM_REGS 4
 
 static AMD64_Reg_No param_regs [] = { AMD64_RCX, AMD64_RDX, AMD64_R8, AMD64_R9 };
 
-static AMD64_Reg_No return_regs [] = { AMD64_RAX, AMD64_RDX };
+static AMD64_XMM_Reg_No float_param_regs [] = { AMD64_XMM0, AMD64_XMM1, AMD64_XMM2, AMD64_XMM3 };
+
+static AMD64_Reg_No return_regs [] = { AMD64_RAX };
+
+static AMD64_XMM_Reg_No float_return_regs [] = { AMD64_XMM0 };
+
+#define PARAM_REGS G_N_ELEMENTS(param_regs)
+#define FLOAT_PARAM_REGS G_N_ELEMENTS(float_param_regs)
+#define RETURN_REGS G_N_ELEMENTS(return_regs)
+#define FLOAT_RETURN_REGS G_N_ELEMENTS(float_return_regs)
+
 #else
 #define PARAM_REGS 6
 #define FLOAT_PARAM_REGS 8
@@ -248,6 +290,7 @@ typedef enum {
 	ArgOnStack,
 	ArgValuetypeInReg,
 	ArgValuetypeAddrInIReg,
+	ArgValuetypeAddrOnStack,
 	/* gsharedvt argument passed by addr */
 	ArgGSharedVtInReg,
 	ArgGSharedVtOnStack,
@@ -269,7 +312,7 @@ typedef struct {
 	int nregs;
 	/* Only if storage == ArgOnStack */
 	int arg_size; // Bytes, will always be rounded up/aligned to 8 byte boundary
-	gboolean pass_empty_struct; // Set in scenarios when empty structs needs to be represented as argument.
+	guint8 pass_empty_struct : 1; // Set in scenarios when empty structs needs to be represented as argument.
 } ArgInfo;
 
 typedef struct {
@@ -360,11 +403,8 @@ typedef struct {
 #define MONO_ARCH_EMULATE_CONV_R8_UN    1
 #define MONO_ARCH_EMULATE_FREM 1
 #define MONO_ARCH_HAVE_IS_INT_OVERFLOW 1
-
-#define MONO_ARCH_ENABLE_MONO_LMF_VAR 1
 #define MONO_ARCH_HAVE_INVALIDATE_METHOD 1
 #define MONO_ARCH_HAVE_FULL_AOT_TRAMPOLINES 1
-#define MONO_ARCH_HAVE_TLS_GET (mono_amd64_have_tls_get ())
 #define MONO_ARCH_IMT_REG AMD64_R10
 #define MONO_ARCH_IMT_SCRATCH_REG AMD64_R11
 #define MONO_ARCH_VTABLE_REG MONO_AMD64_ARG_REG1
@@ -377,7 +417,7 @@ typedef struct {
 #define MONO_ARCH_EXC_REG AMD64_RAX
 #define MONO_ARCH_HAVE_CMOV_OPS 1
 #define MONO_ARCH_HAVE_EXCEPTIONS_INIT 1
-#define MONO_ARCH_HAVE_GENERALIZED_IMT_THUNK 1
+#define MONO_ARCH_HAVE_GENERALIZED_IMT_TRAMPOLINE 1
 #define MONO_ARCH_HAVE_LIVERANGE_OPS 1
 #define MONO_ARCH_HAVE_SIGCTX_TO_MONOCTX 1
 #define MONO_ARCH_HAVE_GET_TRAMPOLINES 1
@@ -393,6 +433,7 @@ typedef struct {
 
 #define MONO_ARCH_LLVM_SUPPORTED 1
 #define MONO_ARCH_HAVE_HANDLER_BLOCK_GUARD 1
+#define MONO_ARCH_HAVE_HANDLER_BLOCK_GUARD_AOT 1
 #define MONO_ARCH_HAVE_CARD_TABLE_WBARRIER 1
 #define MONO_ARCH_HAVE_SETUP_RESUME_FROM_SIGNAL_HANDLER_CTX 1
 #define MONO_ARCH_GC_MAPS_SUPPORTED 1
@@ -406,13 +447,10 @@ typedef struct {
 #define MONO_ARCH_HAVE_PATCH_CODE_NEW 1
 #define MONO_ARCH_HAVE_OP_GENERIC_CLASS_INIT 1
 #define MONO_ARCH_HAVE_GENERAL_RGCTX_LAZY_FETCH_TRAMPOLINE 1
+#define MONO_ARCH_HAVE_INIT_LMF_EXT 1
 
 #if defined(TARGET_OSX) || defined(__linux__)
 #define MONO_ARCH_HAVE_UNWIND_BACKTRACE 1
-#endif
-
-#if defined(TARGET_OSX) || defined(__linux__) || defined(TARGET_WIN32)
-#define MONO_ARCH_HAVE_TLS_GET_REG 1
 #endif
 
 #define MONO_ARCH_GSHAREDVT_SUPPORTED 1
@@ -460,27 +498,121 @@ mono_amd64_start_gsharedvt_call (GSharedVtCallInfo *info, gpointer *caller, gpoi
 guint64
 mono_amd64_get_original_ip (void);
 
-guint8*
-mono_amd64_emit_tls_get (guint8* code, int dreg, int tls_offset);
-
-gboolean
-mono_amd64_have_tls_get (void);
-
 GSList*
 mono_amd64_get_exception_trampolines (gboolean aot);
 
 int
 mono_amd64_get_tls_gs_offset (void) MONO_LLVM_INTERNAL;
 
-#ifdef TARGET_WIN32
+gpointer
+mono_amd64_handler_block_trampoline_helper (void);
 
-void mono_arch_unwindinfo_add_push_nonvol (gpointer* monoui, gpointer codebegin, gpointer nextip, guchar reg );
-void mono_arch_unwindinfo_add_set_fpreg (gpointer* monoui, gpointer codebegin, gpointer nextip, guchar reg );
-void mono_arch_unwindinfo_add_alloc_stack (gpointer* monoui, gpointer codebegin, gpointer nextip, guint size );
-guint mono_arch_unwindinfo_get_size (gpointer monoui);
-void mono_arch_unwindinfo_install_unwind_info (gpointer* monoui, gpointer code, guint code_size);
+#if defined(TARGET_WIN32) && !defined(DISABLE_JIT)
 
+#if G_HAVE_API_SUPPORT(HAVE_CLASSIC_WINAPI_SUPPORT)
 #define MONO_ARCH_HAVE_UNWIND_TABLE 1
+#define MONO_ARCH_HAVE_CODE_CHUNK_TRACKING 1
+
+#ifdef ENABLE_CHECKED_BUILD
+#define ENABLE_CHECKED_BUILD_UNWINDINFO
+#endif
+
+#define MONO_MAX_UNWIND_CODES 22
+
+typedef enum _UNWIND_OP_CODES {
+    UWOP_PUSH_NONVOL = 0, /* info == register number */
+    UWOP_ALLOC_LARGE,     /* no info, alloc size in next 2 slots */
+    UWOP_ALLOC_SMALL,     /* info == size of allocation / 8 - 1 */
+    UWOP_SET_FPREG,       /* no info, FP = RSP + UNWIND_INFO.FPRegOffset*16 */
+    UWOP_SAVE_NONVOL,     /* info == register number, offset in next slot */
+    UWOP_SAVE_NONVOL_FAR, /* info == register number, offset in next 2 slots */
+    UWOP_SAVE_XMM128,     /* info == XMM reg number, offset in next slot */
+    UWOP_SAVE_XMM128_FAR, /* info == XMM reg number, offset in next 2 slots */
+    UWOP_PUSH_MACHFRAME   /* info == 0: no error-code, 1: error-code */
+} UNWIND_CODE_OPS;
+
+typedef union _UNWIND_CODE {
+    struct {
+        guchar CodeOffset;
+        guchar UnwindOp : 4;
+        guchar OpInfo   : 4;
+    };
+    gushort FrameOffset;
+} UNWIND_CODE, *PUNWIND_CODE;
+
+typedef struct _UNWIND_INFO {
+	guchar Version       : 3;
+	guchar Flags         : 5;
+	guchar SizeOfProlog;
+	guchar CountOfCodes;
+	guchar FrameRegister : 4;
+	guchar FrameOffset   : 4;
+	UNWIND_CODE UnwindCode[MONO_MAX_UNWIND_CODES];
+/*	UNWIND_CODE MoreUnwindCode[((CountOfCodes + 1) & ~1) - 1];
+ *	union {
+ *		OPTIONAL ULONG ExceptionHandler;
+ *		OPTIONAL ULONG FunctionEntry;
+ *	};
+ *	OPTIONAL ULONG ExceptionData[]; */
+} UNWIND_INFO, *PUNWIND_INFO;
+
+inline guint
+mono_arch_unwindinfo_get_size (guchar code_count)
+{
+	// Returned size will be used as the allocated size for unwind data trailing the memory used by compiled method.
+	// Windows x64 ABI have some requirements on the data written into this memory. Both the RUNTIME_FUNCTION
+	// and UNWIND_INFO struct needs to be DWORD aligned and the number of elements in unwind codes array
+	// should have an even number of entries, while the count stored in UNWIND_INFO struct should hold the real number
+	// of unwind codes. Adding extra bytes to the total size will make sure we can properly align the RUNTIME_FUNCTION
+	// struct. Since our UNWIND_INFO follows RUNTIME_FUNCTION struct in memory, it will automatically be DWORD aligned
+	// as well. Also make sure to allocate room for a padding UNWIND_CODE, if needed.
+	return (sizeof (mgreg_t) + sizeof (UNWIND_INFO)) -
+		(sizeof (UNWIND_CODE) * ((MONO_MAX_UNWIND_CODES - ((code_count + 1) & ~1))));
+}
+
+guchar
+mono_arch_unwindinfo_get_code_count (GSList *unwind_ops);
+
+guint
+mono_arch_unwindinfo_init_method_unwind_info (gpointer cfg);
+
+void
+mono_arch_unwindinfo_install_method_unwind_info (gpointer *monoui, gpointer code, guint code_size);
+
+void
+mono_arch_unwindinfo_install_tramp_unwind_info (GSList *unwind_ops, gpointer code, guint code_size);
+
+void
+mono_arch_code_chunk_new (void *chunk, int size);
+
+void
+mono_arch_code_chunk_destroy (void *chunk);
+
+#endif /* G_HAVE_API_SUPPORT(HAVE_CLASSIC_WINAPI_SUPPORT) */
+#endif /* defined(TARGET_WIN32) && !defined(DISABLE_JIT) */
+
+#ifdef MONO_ARCH_HAVE_UNWIND_TABLE
+// Allocate additional size for max 3 unwind ops (push + fp or sp small|large) + unwind info struct trailing code buffer.
+#define MONO_TRAMPOLINE_UNWINDINFO_SIZE(max_code_count) (mono_arch_unwindinfo_get_size (max_code_count))
+#define MONO_MAX_TRAMPOLINE_UNWINDINFO_SIZE (MONO_TRAMPOLINE_UNWINDINFO_SIZE(3))
+
+static inline gboolean
+mono_arch_unwindinfo_validate_size (GSList *unwind_ops, guint max_size)
+{
+	guint current_size = mono_arch_unwindinfo_get_size (mono_arch_unwindinfo_get_code_count (unwind_ops));
+	return current_size <= max_size;
+}
+
+#else
+
+#define MONO_TRAMPOLINE_UNWINDINFO_SIZE(max_code_count) 0
+#define MONO_MAX_TRAMPOLINE_UNWINDINFO_SIZE 0
+
+static inline gboolean
+mono_arch_unwindinfo_validate_size (GSList *unwind_ops, guint max_size)
+{
+	return TRUE;
+}
 #endif
 
 CallInfo* mono_arch_get_call_info (MonoMemPool *mp, MonoMethodSignature *sig);

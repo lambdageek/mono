@@ -2,8 +2,8 @@
 // <copyright file="DataTable.cs" company="Microsoft">
 //     Copyright (c) Microsoft Corporation.  All rights reserved.
 // </copyright>
-// <owner current="true" primary="true">[....]</owner>
-// <owner current="true" primary="false">[....]</owner>
+// <owner current="true" primary="true">Microsoft</owner>
+// <owner current="true" primary="false">Microsoft</owner>
 //------------------------------------------------------------------------------
 
 namespace System.Data {
@@ -1893,7 +1893,7 @@ namespace System.Data {
                     }
                 }
             }
-            fInitInProgress = false; // [....] : 77890. It is must that we set off this flag after calling FinishInitxxx();
+            fInitInProgress = false; // Microsoft : 77890. It is must that we set off this flag after calling FinishInitxxx();
             if (delayedSetPrimaryKey != null) {
                 PrimaryKey = delayedSetPrimaryKey;
                 delayedSetPrimaryKey = null;
@@ -2150,7 +2150,7 @@ namespace System.Data {
             Bid.ScopeEnter(out hscp, "<ds.DataTable.Clone|INFO> %d#, cloneDS=%d\n", ObjectID, (cloneDS != null) ? cloneDS.ObjectID : 0);
             try {
                 DataTable clone = CreateInstance();
-                if (clone.Columns.Count > 0) // [....] : To clean up all the schema in strong typed dataset.
+                if (clone.Columns.Count > 0) // Microsoft : To clean up all the schema in strong typed dataset.
                     clone.Reset();
                 return CloneTo(clone, cloneDS, false);
             }
@@ -2225,8 +2225,8 @@ namespace System.Data {
             clone._caseSensitiveUserSet = _caseSensitiveUserSet;
 
             clone.displayExpression = displayExpression;
-            clone.typeName = typeName; //[....]
-            clone.repeatableElement = repeatableElement; //[....]
+            clone.typeName = typeName; //Microsoft
+            clone.repeatableElement = repeatableElement; //Microsoft
             clone.MinimumCapacity = MinimumCapacity;
             clone.RemotingFormat = RemotingFormat;
 //            clone.SerializeHierarchy = SerializeHierarchy;
@@ -5044,7 +5044,12 @@ namespace System.Data {
             if (stream == null)
                 return XmlReadMode.Auto;
 
-            return ReadXml( new XmlTextReader(stream), false);
+            XmlTextReader xr = new XmlTextReader(stream);
+
+            // Prevent Dtd entity in DataTable 
+            xr.XmlResolver = null;
+
+            return ReadXml(xr, false);
         }
 
         public XmlReadMode ReadXml(TextReader reader)
@@ -5052,7 +5057,12 @@ namespace System.Data {
             if (reader == null)
                 return XmlReadMode.Auto;
 
-            return ReadXml( new XmlTextReader(reader), false);
+            XmlTextReader xr = new XmlTextReader(reader);
+
+            // Prevent Dtd entity in DataTable 
+            xr.XmlResolver = null;
+
+            return ReadXml(xr, false);
         }
 
         [ResourceExposure(ResourceScope.Machine)]
@@ -5060,7 +5070,12 @@ namespace System.Data {
         public XmlReadMode ReadXml(string fileName)
         {
             XmlTextReader xr = new XmlTextReader(fileName);
-            try {
+
+            // Prevent Dtd entity in DataTable 
+            xr.XmlResolver = null;
+
+            try
+            {
                 return ReadXml( xr , false);
             }
             finally {
@@ -5526,8 +5541,8 @@ namespace System.Data {
                             throw ExceptionBuilder.DataTableInferenceNotSupported();
                         }
 
-    // [....]                    xmlload.InferSchema(xdoc, null);
-    // [....]                    xmlload.LoadData(xdoc);
+    // Microsoft                    xmlload.InferSchema(xdoc, null);
+    // Microsoft                    xmlload.LoadData(xdoc);
                     }
                 }
                 RestoreConstraint(originalEnforceConstraint);

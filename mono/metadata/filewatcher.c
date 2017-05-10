@@ -1,5 +1,6 @@
-/*
- * filewatcher.c: File System Watcher internal calls
+/**
+ * \file
+ * File System Watcher internal calls
  *
  * Authors:
  *	Gonzalo Paniagua Javier (gonzalo@ximian.com)
@@ -28,6 +29,8 @@
 #include <mono/metadata/marshal.h>
 #include <mono/utils/mono-dl.h>
 #include <mono/utils/mono-io-portability.h>
+#include <mono/metadata/w32error.h>
+
 #ifdef HOST_WIN32
 
 /*
@@ -108,12 +111,15 @@ ves_icall_System_IO_FAMW_InternalFAMNextEvent (gpointer conn,
 					       gint *code,
 					       gint *reqnum)
 {
+	MonoError error;
 	FAMEvent ev;
 
 	if (FAMNextEvent (conn, &ev) == 1) {
-		*filename = mono_string_new (mono_domain_get (), ev.filename);
+		*filename = mono_string_new_checked (mono_domain_get (), ev.filename, &error);
 		*code = ev.code;
 		*reqnum = ev.fr.reqnum;
+		if (mono_error_set_pending_exception (&error))
+			return FALSE;
 		return TRUE;
 	}
 

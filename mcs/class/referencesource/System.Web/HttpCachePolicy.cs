@@ -30,7 +30,7 @@ namespace System.Web {
     //
     // Public constants for cache-control
     //
-    
+
 
     /// <devdoc>
     ///    <para>
@@ -573,12 +573,12 @@ namespace System.Web {
 
             int i, n;
             string[] fields;
-            
+
             _utcTimestampRequest = utcTimestampRequest;
 
-            _varyByContentEncodings.ResetFromContentEncodings(settings.VaryByContentEncodings);
-            _varyByHeaders.ResetFromHeaders(settings.VaryByHeaders);                          
-            _varyByParams.ResetFromParams(settings.VaryByParams);
+            _varyByContentEncodings.SetContentEncodings(settings.VaryByContentEncodings);
+            _varyByHeaders.SetHeaders(settings.VaryByHeaders);                          
+            _varyByParams.SetParams(settings.VaryByParams);
 
             _isModified                       = settings.IsModified;                    
             _hasSetCookieHeader               = settings.hasSetCookieHeader;
@@ -645,7 +645,11 @@ namespace System.Web {
             }
         }
 
-        internal bool IsModified() {
+        /// <summary>
+        /// Return true if the CachePolicy has been modified
+        /// </summary>
+        /// <returns></returns>
+        public bool IsModified() {
             return _isModified || _varyByContentEncodings.IsModified() || _varyByHeaders.IsModified() || _varyByParams.IsModified();
         }
 
@@ -771,20 +775,18 @@ namespace System.Web {
                 return;
             }
 
-            Debug.Assert((_utcTimestampCreated == DateTime.MinValue && _utcTimestampRequest == DateTime.MinValue) ||
-                         (_utcTimestampCreated != DateTime.MinValue && _utcTimestampRequest != DateTime.MinValue),
-                        "_utcTimestampCreated and _utcTimestampRequest are out of [....] in UpdateCachedHeaders");
-
+            //To enable Out of Band OutputCache Module support, we will always refresh the UtcTimestampRequest.
             if (_utcTimestampCreated == DateTime.MinValue) {
-                _utcTimestampCreated = _utcTimestampRequest = response.Context.UtcTimestamp;
+                _utcTimestampCreated = response.Context.UtcTimestamp;
             }
+            _utcTimestampRequest = response.Context.UtcTimestamp; 
 
             if (_slidingExpiration != 1) {
                 _slidingDelta = TimeSpan.Zero;
             }
             else if (_isMaxAgeSet) {
                 _slidingDelta = _maxAge;
-            }
+            } 
             else if (_isExpiresSet) {
                 _slidingDelta = _utcExpires - _utcTimestampCreated;
             }
@@ -840,7 +842,7 @@ namespace System.Web {
                 }
 
                 sb.Append('\"');
-            }
+            } 
 
             if (_noStore) {
                 AppendValueToHeader(sb, "no-store");
@@ -1056,10 +1058,10 @@ namespace System.Web {
                 headers.Add(_headerVaryBy);
             }
         }
-
+ 
         /*
-         * Public methods
-         */
+        * Public methods
+        */
 
         internal HttpCachePolicySettings GetCurrentSettings(HttpResponse response) {
             String[]                    varyByContentEncodings;
@@ -1155,7 +1157,7 @@ namespace System.Web {
 
         internal bool   IsKernelCacheable(HttpRequest request, bool enableKernelCacheForVaryByStar) {
             return  _cacheability == HttpCacheability.Public
-                && !_hasUserProvidedDependencies // Consider ([....]): rework dependency model to support user-provided dependencies
+                && !_hasUserProvidedDependencies // Consider (Microsoft): rework dependency model to support user-provided dependencies
                 && !_hasSetCookieHeader
                 && !_noServerCaching
                 && HasExpirationPolicy()
@@ -1191,6 +1193,16 @@ namespace System.Web {
             return absoluteExpiration;
         }
 
+        // Expose this property to OutputCacheUtility class 
+        // In order to enable Out of Band output cache module to access the Validation Callback Info
+        internal IEnumerable GetValidationCallbacks() {
+            if (_validationCallbackInfo == null) {
+                return new ArrayList();
+            }
+
+            return _validationCallbackInfo;
+        }
+
         /*
          * Cache at server?
          */
@@ -1203,7 +1215,11 @@ namespace System.Web {
             _noServerCaching = true;
         }
 
-        internal bool GetNoServerCaching() {
+        /// <summary>
+        /// Return True if we should stops all server caching for current response
+        /// </summary>
+        /// <returns></returns>
+        public bool GetNoServerCaching() {
             return _noServerCaching;
         }
 
@@ -1229,6 +1245,13 @@ namespace System.Web {
             _varyByCustom = custom;
         }
 
+        /// <summary>
+        /// Get the Vary by Custom Value
+        /// </summary>
+        /// <returns></returns>
+        public string GetVaryByCustom() {
+            return _varyByCustom;
+        }
         /*
          * Cache-Control: extension        
          */
@@ -1250,6 +1273,14 @@ namespace System.Web {
             }
         }
 
+        /// <summary>
+        /// Get Cache Extensions Value
+        /// </summary>
+        /// <returns></returns>
+        public string GetCacheExtensions() {
+            return _cacheExtension;
+        }
+
         /*
          * Cache-Control: no-transform        
          */
@@ -1263,9 +1294,25 @@ namespace System.Web {
             _noTransforms = true;
         }
 
+        /// <summary>
+        /// Return true if No-transform directive, enables the sending of the CacheControl
+        /// </summary>
+        /// <returns></returns>
+        public bool GetNoTransforms() {
+            return _noTransforms;
+        }
+
         internal void SetIgnoreRangeRequests() {
             Dirtied();
             _ignoreRangeRequests = true;
+        }
+
+        /// <summary>
+        /// Return true if ignore range request
+        /// </summary>
+        /// <returns></returns>
+        public bool GetIgnoreRangeRequests() {
+            return _ignoreRangeRequests;
         }
 
         /// <devdoc>
@@ -1320,11 +1367,15 @@ namespace System.Web {
             }
         }
 
-        internal HttpCacheability GetCacheability() {
+        /// <summary>
+        /// Get the Cache-control (public, private and no-cache) directive
+        /// </summary>
+        /// <returns></returns>
+        public HttpCacheability GetCacheability() {
             return _cacheability;
         }
-
-
+        
+       
         /// <devdoc>
         ///    <para>Sets the Cache-Control header to one of the values of HttpCacheability in 
         ///       conjunction with a field-level exclusion directive.</para>
@@ -1376,6 +1427,14 @@ namespace System.Web {
             Dirtied();
             _hasUserProvidedDependencies = hasUserProvidedDependencies;
         }
+        
+        /// <summary>
+        /// return true if no store is set
+        /// </summary>
+        /// <returns></returns>
+        public bool GetNoStore() {
+            return _noStore;
+        }
 
         /*
          * Expiration policy.
@@ -1405,6 +1464,14 @@ namespace System.Web {
             }
         }
 
+        /// <summary>
+        /// Return the expire header as absolute expire datetime 
+        /// </summary>
+        /// <returns></returns>
+        public DateTime GetExpires() {
+            return _utcExpires;
+        }
+
         /*
          * Cache-Control: max-age=delta-seconds
          */
@@ -1427,6 +1494,14 @@ namespace System.Web {
                 _isMaxAgeSet = true;
             }
         }
+
+        /// <summary>
+        /// Get the Cache-Control Max Age
+        /// </summary>
+        /// <returns></returns>
+        public TimeSpan GetMaxAge() {
+            return _maxAge;
+        }       
 
         // Suppress max-age and s-maxage in cache-control header (required for IIS6 kernel mode cache)
         internal void SetNoMaxAgeInCacheControl() {
@@ -1452,6 +1527,14 @@ namespace System.Web {
             }
         }
 
+        /// <summary>
+        /// Get the Cache-Control: Proxy Max Age Value
+        /// </summary>
+        /// <returns></returns>
+        public TimeSpan GetProxyMaxAge() {
+            return _proxyMaxAge;
+        }
+
         /*
          * Sliding Expiration
          */
@@ -1470,6 +1553,17 @@ namespace System.Web {
             }
         }
 
+        /// <summary>
+        /// Return true if to make expiration sliding. that is, if cached, it should be renewed with each
+        /// response. This feature is identical in spirit to the IIS
+        /// configuration option to add an expiration header relative to the current response
+        /// time. This feature is identical in spirit to the IIS configuration option to add
+        /// an expiration header relative to the current response time.
+        /// </summary>
+        /// <returns></returns>
+        public bool HasSlidingExpiration() {
+            return _slidingExpiration == 1;
+        }
 
         public void SetValidUntilExpires(bool validUntilExpires) {
             if (_validUntilExpires == -1 || _validUntilExpires == 1) {
@@ -1478,6 +1572,13 @@ namespace System.Web {
             }
         }
 
+        /// <summary>
+        /// Return true if valid until expires
+        /// </summary>
+        /// <returns></returns>
+        public bool IsValidUntilExpires() {
+            return _validUntilExpires == 1;
+        }
 
         public void SetAllowResponseInBrowserHistory(bool allow) {
             if (_allowInHistory == -1 || _allowInHistory == 1) {
@@ -1512,7 +1613,17 @@ namespace System.Web {
             }
         }
 
-        /*
+        /// <summary>
+        /// Get the Cache-Control: header to reflect either the must-revalidate or 
+        /// proxy-revalidate directives. 
+        /// The default is to not send either of these directives unless explicitly enabled using this method.
+        /// </summary>
+        /// <returns></returns>
+        public HttpCacheRevalidation GetRevalidation() {
+            return _revalidation;
+        }
+
+         /*
          * Etag
          */
 
@@ -1536,6 +1647,16 @@ namespace System.Web {
             Dirtied();
             _etag = etag;
         }
+
+        /// <summary>
+        /// Get the ETag header. Once an ETag is set, 
+        /// subsequent attempts to set it will fail and an exception will be thrown.
+        /// </summary>
+        /// <returns></returns>
+        public string GetETag() {
+            return _etag;
+        }
+
 
         /*
          * Last-Modified: RFC Date
@@ -1577,6 +1698,14 @@ namespace System.Web {
             }
         }
 
+        /// <summary>
+        /// Get the Last-Modified header. 
+        /// </summary>
+        /// <returns></returns>
+        public DateTime GetUtcLastModified() {
+            return _utcLastModified;
+        }
+
 
         /// <devdoc>
         ///    <para>Sets the Last-Modified: header based on the timestamps of the
@@ -1585,6 +1714,15 @@ namespace System.Web {
         public void SetLastModifiedFromFileDependencies() {
             Dirtied();
             _generateLastModifiedFromFiles = true; 
+        }
+
+        /// <summary>
+        /// Return true if the Last-Modified header is set to base on the timestamps of the
+        /// file dependencies of the handler.
+        /// </summary>
+        /// <returns></returns>
+        public bool GetLastModifiedFromFileDependencies() {
+            return _generateLastModifiedFromFiles;
         }
 
 
@@ -1601,6 +1739,14 @@ namespace System.Web {
             _generateEtagFromFiles = true;         
         }
 
+        /// <summary>
+        /// Return true if the Etag header has been set to base on the timestamps of the file 
+        /// dependencies of the handler
+        /// </summary>
+        /// <returns></returns>
+        public bool GetETagFromFileDependencies() {
+            return _generateEtagFromFiles;
+        }
 
         public void SetOmitVaryStar(bool omit) {
             Dirtied();
@@ -1610,6 +1756,13 @@ namespace System.Web {
             }
         }
 
+        /// <summary>
+        /// Return true if to omit Vary Star
+        /// </summary>
+        /// <returns></returns>
+        public int GetOmitVaryStar() {
+            return _omitVaryStar;
+        }
 
         /// <devdoc>
         ///    <para>Registers a validation callback for the current response.</para>
@@ -1627,6 +1780,17 @@ namespace System.Web {
             }
 
             _validationCallbackInfo.Add(new ValidationCallbackInfo(handler, data));
+        }
+        /// <summary>
+        /// Utc Timestamp Created
+        /// </summary>
+        public DateTime UtcTimestampCreated {
+            get {
+                return _utcTimestampCreated;
+            }
+            set {
+                _utcTimestampCreated = value;
+            }
         }
     }
 }

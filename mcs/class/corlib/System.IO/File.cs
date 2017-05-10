@@ -38,10 +38,7 @@ using System.Diagnostics;
 using System.Security;
 using System.Text;
 using System.Runtime.InteropServices;
-
-#if !NET_2_1
 using System.Security.AccessControl;
-#endif
 
 namespace System.IO
 {
@@ -139,14 +136,14 @@ namespace System.IO
 				FileShare.None, bufferSize);
 		}
 
-#if !NET_2_1
 		[MonoLimitation ("FileOptions are ignored")]
 		public static FileStream Create (string path, int bufferSize,
 						 FileOptions options)
 		{
-			return Create (path, bufferSize, options, null);
+			return new FileStream (path, FileMode.Create, FileAccess.ReadWrite,
+				FileShare.None, bufferSize, options);
 		}
-		
+
 		[MonoLimitation ("FileOptions and FileSecurity are ignored")]
 		public static FileStream Create (string path, int bufferSize,
 						 FileOptions options,
@@ -155,7 +152,6 @@ namespace System.IO
 			return new FileStream (path, FileMode.Create, FileAccess.ReadWrite,
 				FileShare.None, bufferSize, options);
 		}
-#endif
 
 		public static StreamWriter CreateText (string path)
 		{
@@ -200,7 +196,6 @@ namespace System.IO
 			return MonoIO.ExistsFile (path, out error);
 		}
 
-#if !NET_2_1
 		public static FileSecurity GetAccessControl (string path)
 		{
 			// AccessControlSections.Audit requires special permissions.
@@ -214,7 +209,6 @@ namespace System.IO
 		{
 			return new FileSecurity (path, includeSections);
 		}
-#endif
 
 		public static FileAttributes GetAttributes (string path)
 		{
@@ -433,7 +427,6 @@ namespace System.IO
 			}
 		}
 
-#if !NET_2_1
 		public static void SetAccessControl (string path,
 						     FileSecurity fileSecurity)
 		{
@@ -442,7 +435,6 @@ namespace System.IO
 
 			fileSecurity.PersistModifications (path);
 		}
-#endif
 
 		public static void SetAttributes (string path,
 						  FileAttributes fileAttributes)

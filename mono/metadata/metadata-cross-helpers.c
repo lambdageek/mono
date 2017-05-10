@@ -1,3 +1,7 @@
+/**
+ * \file
+ */
+
 #include <stdio.h>
 
 #include "config.h"
@@ -6,6 +10,7 @@
 #include <mono/metadata/class-internals.h>
 #include <mono/metadata/object-internals.h>
 #include <mono/metadata/monitor.h>
+#include <mono/metadata/handle.h>
 #ifdef HAVE_SGEN_GC
 #include <mono/sgen/sgen-gc.h>
 #endif
@@ -96,6 +101,12 @@ mono_dump_metadata_offsets (void)
 void
 mono_metadata_cross_helpers_run (void);
 
+/*
+ * mono_metadata_cross_helpers_run:
+ *
+ *   Check that the offsets given by object-offsets.h match the offsets
+ * on the host. This only checks the metadata offsets.
+ */
 void
 mono_metadata_cross_helpers_run (void)
 {

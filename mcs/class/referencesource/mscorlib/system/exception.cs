@@ -3,7 +3,7 @@
 //   Copyright (c) Microsoft Corporation.  All rights reserved.
 // 
 //
-// <OWNER>[....]</OWNER>
+// <OWNER>Microsoft</OWNER>
 //
 // ==--==
 /*=============================================================================
@@ -989,7 +989,7 @@ namespace System {
         [System.Security.SecurityCritical]  // auto-generated
         internal virtual String InternalToString()
         {
-#if FEATURE_MONO_CAS
+#if MONO_FEATURE_CAS
             try 
             {
 #pragma warning disable 618

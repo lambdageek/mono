@@ -7,7 +7,7 @@
 **
 ** Class:  List
 ** 
-** <OWNER>[....]</OWNER>
+** <OWNER>Microsoft</OWNER>
 **
 ** Purpose: Implements a generic, dynamically sized list as an 
 **          array.
@@ -910,7 +910,9 @@ namespace System.Collections.Generic {
             Contract.EndContractBlock();
     
             if (count > 0) {
+#if !MONO                
                 int i = _size;
+#endif
                 _size -= count;
                 if (index < _size) {
                     Array.Copy(_items, index + count, _items, index, _size - index);

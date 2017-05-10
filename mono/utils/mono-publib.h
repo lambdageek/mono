@@ -1,3 +1,7 @@
+/**
+ * \file
+ */
+
 #ifndef __MONO_PUBLIB_H__
 #define __MONO_PUBLIB_H__
 
@@ -45,13 +49,15 @@ typedef unsigned __int64	uint64_t;
 #include <stdint.h>
 
 #ifdef __GNUC__
-#define MONO_API_EXPORT __attribute__ ((visibility ("default")))
+#define MONO_API_EXPORT __attribute__ ((__visibility__ ("default")))
 #else
 #define MONO_API_EXPORT
 #endif
 #define MONO_API_IMPORT
 
 #endif /* end of compiler-specific stuff */
+
+#include <stdlib.h>
 
 #if defined(MONO_DLL_EXPORT)
 	#define MONO_API MONO_API_EXPORT
@@ -71,6 +77,20 @@ typedef void	(*MonoHFunc)	(void* key, void* value, void* user_data);
 
 MONO_API void mono_free (void *);
 
+#define MONO_ALLOCATOR_VTABLE_VERSION 1
+
+typedef struct {
+	int version;
+	void *(*malloc)      (size_t size);
+	void *(*realloc)     (void *mem, size_t count);
+	void (*free)        (void *mem);
+	void *(*calloc)      (size_t count, size_t size);
+} MonoAllocatorVTable;
+
+MONO_API mono_bool
+mono_set_allocator_vtable (MonoAllocatorVTable* vtable);
+
+
 #define MONO_CONST_RETURN const
 
 /*
@@ -89,9 +109,9 @@ MONO_API void mono_free (void *);
 #if defined (MONO_INSIDE_RUNTIME)
 
 #if defined (__clang__)
-#define MONO_RT_EXTERNAL_ONLY __attribute__ ((unavailable("The mono runtime must not call this function")))
+#define MONO_RT_EXTERNAL_ONLY __attribute__ ((__unavailable__ ("The mono runtime must not call this function")))
 #elif defined (__GNUC__)
-#define MONO_RT_EXTERNAL_ONLY __attribute__ ((error("The mono runtime must not call this function")))
+#define MONO_RT_EXTERNAL_ONLY __attribute__ ((__error__ ("The mono runtime must not call this function")))
 #else
 #define MONO_RT_EXTERNAL_ONLY
 #endif /* __clang__ */
@@ -100,6 +120,15 @@ MONO_API void mono_free (void *);
 #define MONO_RT_EXTERNAL_ONLY
 #endif /* MONO_INSIDE_RUNTIME */
 
+#ifdef __GNUC__
+#define _MONO_DEPRECATED __attribute__ ((__deprecated__))
+#elif defined (_MSC_VER)
+#define _MONO_DEPRECATED __declspec (deprecated)
+#else
+#define _MONO_DEPRECATED
+#endif
+
+#define MONO_DEPRECATED MONO_API MONO_RT_EXTERNAL_ONLY _MONO_DEPRECATED
 
 MONO_END_DECLS
 

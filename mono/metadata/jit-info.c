@@ -1,5 +1,6 @@
-/*
- * jit-info.c: MonoJitInfo functionality
+/**
+ * \file
+ * MonoJitInfo functionality
  *
  * Author:
  *	Dietmar Maurer (dietmar@ximian.com)
@@ -34,9 +35,8 @@
 #include <mono/metadata/assembly.h>
 #include <mono/metadata/exception.h>
 #include <mono/metadata/metadata-internals.h>
-#include <mono/metadata/gc-internals.h>
 #include <mono/metadata/appdomain.h>
-#include <mono/metadata/mono-debug-debugger.h>
+#include <mono/metadata/debug-internals.h>
 #include <mono/metadata/mono-config.h>
 #include <mono/metadata/threads-types.h>
 #include <mono/metadata/runtime.h>
@@ -195,7 +195,7 @@ jit_info_table_chunk_index (MonoJitInfoTableChunk *chunk, MonoThreadHazardPointe
 
 	while (left < right) {
 		int pos = (left + right) / 2;
-		MonoJitInfo *ji = (MonoJitInfo *)get_hazardous_pointer((gpointer volatile*)&chunk->data [pos], hp, JIT_INFO_HAZARD_INDEX);
+		MonoJitInfo *ji = (MonoJitInfo *)mono_get_hazardous_pointer((gpointer volatile*)&chunk->data [pos], hp, JIT_INFO_HAZARD_INDEX);
 		gint8 *code_end = (gint8*)ji->code_start + ji->code_size;
 
 		if (addr < code_end)
@@ -228,7 +228,7 @@ jit_info_table_find (MonoJitInfoTable *table, MonoThreadHazardPointers *hp, gint
 		MonoJitInfoTableChunk *chunk = table->chunks [chunk_pos];
 
 		while (pos < chunk->num_elements) {
-			ji = (MonoJitInfo *)get_hazardous_pointer ((gpointer volatile*)&chunk->data [pos], hp, JIT_INFO_HAZARD_INDEX);
+			ji = (MonoJitInfo *)mono_get_hazardous_pointer ((gpointer volatile*)&chunk->data [pos], hp, JIT_INFO_HAZARD_INDEX);
 
 			++pos;
 
@@ -286,7 +286,7 @@ mono_jit_info_table_find_internal (MonoDomain *domain, char *addr, gboolean try_
 	   table by a hazard pointer and make sure that the pointer is
 	   still there after we've made it hazardous, we don't have to
 	   worry about the writer freeing the table. */
-	table = (MonoJitInfoTable *)get_hazardous_pointer ((gpointer volatile*)&domain->jit_info_table, hp, JIT_INFO_TABLE_HAZARD_INDEX);
+	table = (MonoJitInfoTable *)mono_get_hazardous_pointer ((gpointer volatile*)&domain->jit_info_table, hp, JIT_INFO_TABLE_HAZARD_INDEX);
 
 	ji = jit_info_table_find (table, hp, (gint8*)addr);
 	if (hp)
@@ -298,7 +298,7 @@ mono_jit_info_table_find_internal (MonoDomain *domain, char *addr, gboolean try_
 
 	/* Maybe its an AOT module */
 	if (try_aot && mono_get_root_domain () && mono_get_root_domain ()->aot_modules) {
-		table = (MonoJitInfoTable *)get_hazardous_pointer ((gpointer volatile*)&mono_get_root_domain ()->aot_modules, hp, JIT_INFO_TABLE_HAZARD_INDEX);
+		table = (MonoJitInfoTable *)mono_get_hazardous_pointer ((gpointer volatile*)&mono_get_root_domain ()->aot_modules, hp, JIT_INFO_TABLE_HAZARD_INDEX);
 		module_ji = jit_info_table_find (table, hp, (gint8*)addr);
 		if (module_ji)
 			ji = jit_info_find_in_aot_func (domain, module_ji->d.image, addr);
@@ -314,18 +314,18 @@ mono_jit_info_table_find_internal (MonoDomain *domain, char *addr, gboolean try_
 
 /**
  * mono_jit_info_table_find:
- * @domain: Domain that you want to look up
- * @addr: Points to an address with JITed code.
+ * \param domain Domain that you want to look up
+ * \param addr Points to an address with JITed code.
  *
- * Use this function to obtain a `MonoJitInfo*` object that can be used to get
- * some statistics.   You should provide both the @domain on which you will be
- * performing the probe, and an address.   Since application domains can share code
+ * Use this function to obtain a \c MonoJitInfo* object that can be used to get
+ * some statistics. You should provide both the \p domain on which you will be
+ * performing the probe, and an address. Since application domains can share code
  * the same address can be in use by multiple domains at once.
  *
  * This does not return any results for trampolines.
  *
- * Returns: NULL if the address does not belong to JITed code (it might be native
- * code or a trampoline) or a valid pointer to a `MonoJitInfo*`.
+ * \returns NULL if the address does not belong to JITed code (it might be native
+ * code or a trampoline) or a valid pointer to a \c MonoJitInfo* .
  */
 MonoJitInfo*
 mono_jit_info_table_find (MonoDomain *domain, char *addr)
@@ -801,6 +801,8 @@ mono_jit_info_size (MonoJitInfoFlags flags, int num_clauses, int num_holes)
 		size += sizeof (MonoArchEHJitInfo);
 	if (flags & JIT_INFO_HAS_THUNK_INFO)
 		size += sizeof (MonoThunkJitInfo);
+	if (flags & JIT_INFO_HAS_UNWIND_INFO)
+		size += sizeof (MonoUnwindJitInfo);
 	return size;
 }
 
@@ -820,17 +822,19 @@ mono_jit_info_init (MonoJitInfo *ji, MonoMethod *method, guint8 *code, int code_
 		ji->has_arch_eh_info = 1;
 	if (flags & JIT_INFO_HAS_THUNK_INFO)
 		ji->has_thunk_info = 1;
+	if (flags & JIT_INFO_HAS_UNWIND_INFO)
+		ji->has_unwind_info = 1;
 }
 
 /**
  * mono_jit_info_get_code_start:
- * @ji: the JIT information handle
+ * \param ji the JIT information handle
  *
  * Use this function to get the starting address for the method described by
- * the @ji object.  You can use this plus the `mono_jit_info_get_code_size`
+ * the \p ji object.  You can use this plus the \c mono_jit_info_get_code_size
  * to determine the start and end of the native code.
  *
- * Returns: Starting address with the native code.
+ * \returns Starting address with the native code.
  */
 gpointer
 mono_jit_info_get_code_start (MonoJitInfo* ji)
@@ -840,13 +844,13 @@ mono_jit_info_get_code_start (MonoJitInfo* ji)
 
 /**
  * mono_jit_info_get_code_size:
- * @ji: the JIT information handle
+ * \param ji the JIT information handle
  *
  * Use this function to get the code size for the method described by
- * the @ji object.   You can use this plus the `mono_jit_info_get_code_start`
+ * the \p ji object. You can use this plus the \c mono_jit_info_get_code_start
  * to determine the start and end of the native code.
  *
- * Returns: Starting address with the native code.
+ * \returns Starting address with the native code.
  */
 int
 mono_jit_info_get_code_size (MonoJitInfo* ji)
@@ -856,13 +860,13 @@ mono_jit_info_get_code_size (MonoJitInfo* ji)
 
 /**
  * mono_jit_info_get_method:
- * @ji: the JIT information handle
+ * \param ji the JIT information handle
  *
- * Use this function to get the `MonoMethod *` that backs
- * the @ji object.
+ * Use this function to get the \c MonoMethod* that backs
+ * the \p ji object.
  *
- * Returns: The MonoMethod that represents the code tracked
- * by @ji.
+ * \returns The \c MonoMethod that represents the code tracked
+ * by \p ji.
  */
 MonoMethod*
 mono_jit_info_get_method (MonoJitInfo* ji)
@@ -992,6 +996,25 @@ mono_jit_info_get_thunk_info (MonoJitInfo *ji)
 		if (ji->has_arch_eh_info)
 			ptr += sizeof (MonoArchEHJitInfo);
 		return (MonoThunkJitInfo*)ptr;
+	} else {
+		return NULL;
+	}
+}
+
+MonoUnwindJitInfo*
+mono_jit_info_get_unwind_info (MonoJitInfo *ji)
+{
+	if (ji->has_unwind_info) {
+		char *ptr = (char*)&ji->clauses [ji->num_clauses];
+		if (ji->has_generic_jit_info)
+			ptr += sizeof (MonoGenericJitInfo);
+		if (ji->has_try_block_holes)
+			ptr += try_block_hole_table_size (ji);
+		if (ji->has_arch_eh_info)
+			ptr += sizeof (MonoArchEHJitInfo);
+		if (ji->has_thunk_info)
+			ptr += sizeof (MonoThunkJitInfo);
+		return (MonoUnwindJitInfo*)ptr;
 	} else {
 		return NULL;
 	}

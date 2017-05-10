@@ -2,8 +2,8 @@
 // <copyright file="DbConnectionPool.cs" company="Microsoft">
 //      Copyright (c) Microsoft Corporation.  All rights reserved.
 // </copyright>
-// <owner current="true" primary="true">[....]</owner>
-// <owner current="true" primary="false">[....]</owner>
+// <owner current="true" primary="true">Microsoft</owner>
+// <owner current="true" primary="false">Microsoft</owner>
 //------------------------------------------------------------------------------
 
 namespace System.Data.ProviderBase {
@@ -12,6 +12,7 @@ namespace System.Data.ProviderBase {
     using System.Collections;
     using System.Collections.Generic;
     using System.Data.Common;
+    using System.Data.SqlClient;
     using System.Diagnostics;
     using System.Globalization;
     using System.Runtime.CompilerServices;
@@ -756,7 +757,47 @@ namespace System.Data.ProviderBase {
         private Timer CreateCleanupTimer() {
             return (new Timer(new TimerCallback(this.CleanupCallback), null, _cleanupWait, _cleanupWait));
         }
-        
+
+        private bool IsBlockingPeriodEnabled()
+        {
+            var poolGroupConnectionOptions = _connectionPoolGroup.ConnectionOptions as SqlConnectionString;
+            if (poolGroupConnectionOptions == null)
+            {
+                return true;
+            }
+
+            var policy = poolGroupConnectionOptions.PoolBlockingPeriod;
+
+            switch (policy)
+            {
+                case PoolBlockingPeriod.Auto:
+                {
+                    if (ADP.IsAzureSqlServerEndpoint(poolGroupConnectionOptions.DataSource))
+                    {
+                        return false; // in Azure it will be Disabled
+                    }
+                    else
+                    {
+                        return true; // in Non Azure, it will be Enabled
+                    }
+                }
+                case PoolBlockingPeriod.AlwaysBlock:
+                {
+                    return true; //Enabled
+                }
+                case PoolBlockingPeriod.NeverBlock:
+                {
+                    return false; //Disabled
+                }
+                default:
+                {
+                    //we should never get into this path.
+                    Debug.Fail("Unknown PoolBlockingPeriod. Please specify explicit results in above switch case statement.");
+                    return true;
+                }
+            }
+        }
+
         private DbConnectionInternal CreateObject(DbConnection owningObject, DbConnectionOptions userOptions, DbConnectionInternal oldConnection) {
             DbConnectionInternal newObj = null;
 
@@ -797,13 +838,18 @@ namespace System.Data.ProviderBase {
                 // Reset the error wait:
                 _errorWait = ERROR_WAIT_DEFAULT;
             }
-            catch(Exception e)  {
+            catch(Exception e)   {
                 // 
                 if (!ADP.IsCatchableExceptionType(e)) {
                     throw;
                 }
 
                 ADP.TraceExceptionForCapture(e);
+
+                if (!IsBlockingPeriodEnabled())
+                {
+                    throw;
+                }
 
                 newObj = null; // set to null, so we do not return bad new object
                 // Failed to create instance
@@ -1163,7 +1209,7 @@ namespace System.Data.ProviderBase {
                 return true;
             }
             else if (retry == null) {
-                // timed out on a [....] call
+                // timed out on a sync call
                 return true;
             }
 

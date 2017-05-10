@@ -3,8 +3,8 @@
 //      Copyright (c) Microsoft Corporation.  All rights reserved.
 // </copyright>
 //
-// @owner [....]
-// @backupOwner [....]
+// @owner Microsoft
+// @backupOwner Microsoft
 //---------------------------------------------------------------------
 
 
@@ -832,6 +832,8 @@ namespace System.Data.Common.Utils
         }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Cryptographic.Standard", "CA5350:Microsoft.Cryptographic.Standard", 
+            Justification = "MD5CryptoServiceProvider is not used for cryptography/security purposes and we do it only for v1 and v1.1 for compatibility reasons.")]
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Security.Cryptography", "CA5350:Microsoft.Cryptographic.Standard", 
             Justification = "MD5CryptoServiceProvider is not used for cryptography/security purposes and we do it only for v1 and v1.1 for compatibility reasons.")]
         internal static HashAlgorithm CreateMetadataHashAlgorithm(double schemaVersion)
         {

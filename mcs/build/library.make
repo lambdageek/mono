@@ -72,10 +72,8 @@ the_libdir_base = $(topdir)/class/$(lib_dir)/$(PROFILE)/
 endif
 
 ifdef RESOURCE_STRINGS
-ifdef BOOTSTRAP_PROFILE
-ifneq (basic, $(BUILD_TOOLS_PROFILE))
+ifneq (basic, $(PROFILE))
 RESOURCE_STRINGS_FILES += $(RESOURCE_STRINGS:%=--resourcestrings:%)
-endif
 endif
 endif
 
@@ -136,7 +134,7 @@ csproj-local: csproj-library csproj-test
 intermediate_clean=$(subst /,-,$(intermediate))
 csproj-library:
 	config_file=`basename $(LIBRARY) .dll`-$(intermediate_clean)$(PROFILE).input; \
-	case "$(thisdir)" in *"Facades"*) config_file=Facades_$$config_file;; esac; \
+	case "$(thisdir)" in *"Facades"*) config_file=Facades_$$config_file;; *"legacy"*) config_file=legacy_$$config_file;; esac; \
 	echo $(thisdir):$$config_file >> $(topdir)/../msvc/scripts/order; \
 	(echo $(is_boot); \
 	echo $(USE_MCS_FLAGS) $(LIBRARY_FLAGS) $(LIB_MCS_FLAGS); \
@@ -168,12 +166,14 @@ install-local:
 	$(MKINSTALLDIRS) $(DESTDIR)$(LIBRARY_INSTALL_DIR)
 	$(INSTALL_LIB) $(the_lib) $(DESTDIR)$(LIBRARY_INSTALL_DIR)/$(LIBRARY_NAME)
 	test ! -f $(the_lib).mdb || $(INSTALL_LIB) $(the_lib).mdb $(DESTDIR)$(LIBRARY_INSTALL_DIR)/$(LIBRARY_NAME).mdb
+	test ! -f $(the_lib:.dll=.pdb) || $(INSTALL_LIB) $(the_lib:.dll=.pdb) $(DESTDIR)$(LIBRARY_INSTALL_DIR)/$(LIBRARY_NAME:.dll=.pdb)
+
 ifdef PLATFORM_AOT_SUFFIX
 	test ! -f $(aot_lib) || $(INSTALL_LIB) $(aot_lib) $(DESTDIR)$(LIBRARY_INSTALL_DIR)
 endif
 
 uninstall-local:
-	-rm -f $(DESTDIR)$(LIBRARY_INSTALL_DIR)/$(LIBRARY_NAME) $(DESTDIR)$(LIBRARY_INSTALL_DIR)/$(LIBRARY_NAME).mdb
+	-rm -f $(DESTDIR)$(LIBRARY_INSTALL_DIR)/$(LIBRARY_NAME) $(DESTDIR)$(LIBRARY_INSTALL_DIR)/$(LIBRARY_NAME).mdb $(DESTDIR)$(LIBRARY_INSTALL_DIR)/$(LIBRARY_NAME:.dll=.pdb)
 
 else
 
@@ -266,7 +266,7 @@ endif
 # make dist will collect files in .sources files from all profiles
 dist-local: dist-default
 	subs=' ' ; \
-	for f in `$(topdir)/tools/removecomments.sh $(wildcard *$(LIBRARY).sources)` $(TEST_FILES) ; do \
+	for f in `$(topdir)/tools/removecomments.sh $(filter-out $(wildcard *_test.dll.sources) $(wildcard *_xtest.dll.sources) $(wildcard *exclude.sources),$(wildcard *.sources))` $(TEST_FILES) ; do \
 	  case $$f in \
 	  ../*) : ;; \
 	  *.g.cs) : ;; \
@@ -298,6 +298,8 @@ endif
 
 $(the_lib): $(the_libdir)/.stamp
 
+ifndef NO_BUILD
+
 $(build_lib): $(response) $(sn) $(BUILT_SOURCES) $(build_libdir:=/.stamp) $(GEN_RESOURCE_DEPS)
 	$(LIBRARY_COMPILE) $(LIBRARY_FLAGS) $(LIB_MCS_FLAGS) $(GEN_RESOURCE_FLAGS) -target:library -out:$@ $(BUILT_SOURCES_cmdline) @$(response)
 ifdef RESOURCE_STRINGS_FILES
@@ -313,11 +315,11 @@ $(the_lib): $(build_lib)
 	$(Q) test ! -f $(build_lib:.dll=.pdb) || mv $(build_lib:.dll=.pdb) $(the_lib:.dll=.pdb)
 endif
 
+endif
+
 library_CLEAN_FILES += $(PROFILE)_aot.log
 
 ifdef PLATFORM_AOT_SUFFIX
-Q_AOT=$(if $(V),,@echo "AOT     [$(PROFILE)] $(notdir $(@))";)
-
 $(the_lib)$(PLATFORM_AOT_SUFFIX): $(the_lib)
 	$(Q_AOT) MONO_PATH='$(the_libdir_base)' > $(PROFILE)_$(LIBRARY_NAME)_aot.log 2>&1 $(RUNTIME) $(AOT_BUILD_FLAGS) --debug $(the_lib)
 
@@ -357,7 +359,10 @@ endif
 ## Include corcompare stuff
 include $(topdir)/build/corcompare.make
 
+ifndef NO_BUILD
 all-local: $(makefrag) $(test_makefrag) $(btest_makefrag)
+endif
+
 ifneq ($(response),$(sourcefile))
 $(response): $(topdir)/build/library.make $(depsdir)/.stamp
 endif
@@ -379,3 +384,6 @@ $(the_libdir)/.doc-stamp: $(the_lib)
 # Need to be here so it comes after the definition of DEP_DIRS/DEP_LIBS
 gen-deps:
 	@echo "$(DEPS_TARGET_DIR): $(DEP_DIRS) $(DEP_LIBS)" >> $(DEPS_FILE)
+
+update-corefx-sr: $(RESX_RESOURCE_STRING)
+	MONO_PATH="$(topdir)/class/lib/$(BUILD_TOOLS_PROFILE)$(PLATFORM_PATH_SEPARATOR)$$MONO_PATH" $(RUNTIME) $(RUNTIME_FLAGS) $(topdir)/class/lib/$(BUILD_TOOLS_PROFILE)/resx2sr.exe $(RESX_RESOURCE_STRING) >corefx/SR.cs

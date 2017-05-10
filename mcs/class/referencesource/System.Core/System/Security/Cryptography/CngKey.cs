@@ -30,7 +30,210 @@ namespace System.Security.Cryptography {
     ///     Managed representation of an NCrypt key
     /// </summary>
     [System.Security.Permissions.HostProtection(MayLeakOnAbort = true)]
-    public sealed class CngKey : IDisposable {
+    public sealed partial class CngKey : IDisposable {
+#if MONO
+        public CngAlgorithmGroup AlgorithmGroup {
+            [SecuritySafeCritical]
+            [Pure]
+            get {
+                throw new NotImplementedException ();
+            }
+        }
+
+        public CngAlgorithm Algorithm {
+            [SecuritySafeCritical]
+            get {
+                throw new NotImplementedException ();
+            }
+        }
+
+        public CngExportPolicies ExportPolicy {
+            [SecuritySafeCritical]
+            get {
+                throw new NotImplementedException ();
+            }
+        }
+
+        public SafeNCryptKeyHandle Handle {
+            [System.Security.SecurityCritical]
+            [SecurityPermission(SecurityAction.Demand, UnmanagedCode = true)]
+            get {
+                throw new NotImplementedException ();
+            }
+        }
+
+        public bool IsEphemeral {
+            [SecuritySafeCritical]
+            [Pure]
+            get {
+                throw new NotImplementedException ();
+            }
+
+            [System.Security.SecurityCritical]
+            private set {
+                throw new NotImplementedException ();
+           }
+        }
+
+        public bool IsMachineKey {
+            [SecuritySafeCritical]
+            get {
+                throw new NotImplementedException ();
+            }
+        }
+
+        public string KeyName {
+            [SecuritySafeCritical]
+            get {
+                throw new NotImplementedException ();
+            }
+        }
+
+        public int KeySize {
+            [SecuritySafeCritical]
+            get {
+                throw new NotImplementedException ();
+            }
+        }
+
+        public CngKeyUsages KeyUsage {
+            [SecuritySafeCritical]
+            get {
+                throw new NotImplementedException ();
+            }
+        }
+
+        public IntPtr ParentWindowHandle {
+            [SecuritySafeCritical]
+            get {
+                throw new NotImplementedException ();
+            }
+
+            [SecuritySafeCritical]
+            [SecurityPermission(SecurityAction.Demand, UnmanagedCode = true)]
+            set {
+                throw new NotImplementedException ();
+            }
+        }
+
+        public CngProvider Provider {
+            [SecuritySafeCritical]
+            get {
+                throw new NotImplementedException ();
+            }
+        }
+
+        public SafeNCryptProviderHandle ProviderHandle {
+            [System.Security.SecurityCritical]
+            [SecurityPermission(SecurityAction.Demand, UnmanagedCode = true)]
+            get {
+                throw new NotImplementedException ();
+            }
+        }
+
+        public string UniqueName {
+            [SecuritySafeCritical]
+            get {
+                throw new NotImplementedException ();
+            }
+        }
+
+        public CngUIPolicy UIPolicy {
+            [SecuritySafeCritical]
+            get {
+                throw new NotImplementedException ();
+            }
+        }
+
+        public static CngKey Create(CngAlgorithm algorithm) {
+            throw new NotImplementedException ();
+        }
+
+        public static CngKey Create(CngAlgorithm algorithm, string keyName) {
+            throw new NotImplementedException ();
+        }
+
+        [SecuritySafeCritical]
+        public static CngKey Create(CngAlgorithm algorithm, string keyName, CngKeyCreationParameters creationParameters) {
+            throw new NotImplementedException ();
+        }
+
+        [SecuritySafeCritical]
+        public void Delete() {
+            throw new NotImplementedException ();
+        }
+
+        [SecuritySafeCritical]
+        [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands", Justification = "Reviewed")]
+        public void Dispose() {
+            throw new NotImplementedException ();
+        }
+
+        public static bool Exists(string keyName) {
+            throw new NotImplementedException ();
+        }
+
+        public static bool Exists(string keyName, CngProvider provider) {
+            throw new NotImplementedException ();
+        }
+
+        [SecuritySafeCritical]
+        [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands", Justification = "Reviewed")]
+        public static bool Exists(string keyName, CngProvider provider, CngKeyOpenOptions options) {
+            throw new NotImplementedException ();
+        }
+
+        public static CngKey Import(byte[] keyBlob, CngKeyBlobFormat format) {
+            throw new NotImplementedException ();
+        }
+
+        [SecuritySafeCritical]
+        public static CngKey Import(byte[] keyBlob, CngKeyBlobFormat format, CngProvider provider) {
+            throw new NotImplementedException ();
+        }
+
+        [SecuritySafeCritical]
+        public byte[] Export(CngKeyBlobFormat format) {
+            throw new NotImplementedException ();
+        }
+
+        [SecuritySafeCritical]
+        [SecurityPermission(SecurityAction.Demand, UnmanagedCode = true)]
+        public CngProperty GetProperty(string name, CngPropertyOptions options) {
+            throw new NotImplementedException ();
+        }
+
+        [SecuritySafeCritical]
+        [SecurityPermission(SecurityAction.Demand, UnmanagedCode = true)]
+        public bool HasProperty(string name, CngPropertyOptions options) {
+            throw new NotImplementedException ();
+        }
+
+        public static CngKey Open(string keyName) {
+            throw new NotImplementedException ();
+        }
+
+        public static CngKey Open(string keyName, CngProvider provider) {
+            throw new NotImplementedException ();
+        }
+
+        [SecuritySafeCritical]
+        public static CngKey Open(string keyName, CngProvider provider, CngKeyOpenOptions openOptions) {
+            throw new NotImplementedException ();
+        }
+
+        [System.Security.SecurityCritical]
+        [SecurityPermission(SecurityAction.Demand, UnmanagedCode = true)]
+        public static CngKey Open(SafeNCryptKeyHandle keyHandle, CngKeyHandleOpenOptions keyHandleOpenOptions) {
+            throw new NotImplementedException ();
+        }
+
+        [SecuritySafeCritical]
+        [SecurityPermission(SecurityAction.Demand, UnmanagedCode = true)]
+        public void SetProperty(CngProperty property) {
+            throw new NotImplementedException ();
+        }
+#else
         private SafeNCryptKeyHandle m_keyHandle;
         private SafeNCryptProviderHandle m_kspHandle;
 
@@ -96,6 +299,15 @@ namespace System.Security.Cryptography {
                                                              CngPropertyOptions.None);
 
                 return (CngExportPolicies)policy;
+            }
+
+            internal set {
+                var property = new CngProperty(
+                    NCryptNative.KeyPropertyName.ExportPolicy,
+                    BitConverter.GetBytes((int)value),
+                    CngPropertyOptions.Persist);
+
+                SetProperty(property);
             }
         }
 
@@ -200,6 +412,23 @@ namespace System.Security.Cryptography {
             [SecuritySafeCritical]
             get {
                 Contract.Assert(m_keyHandle != null);
+
+                // First, try the Win10+ Public Key Length property, it matches the purpose
+                // of this property better when it and Length disagree.
+                int keySize = 0;
+
+                NCryptNative.ErrorCode errorCode = NCryptNative.GetPropertyAsInt(
+                    m_keyHandle,
+                    NCryptNative.KeyPropertyName.PublicKeyLength,
+                    CngPropertyOptions.None,
+                    ref keySize);
+
+                // If the new property reports it was successful, use it.
+                // Otherwise, ask the old question.
+                if (errorCode == NCryptNative.ErrorCode.Success) {
+                    return keySize;
+                }
+
                 return NCryptNative.GetPropertyAsDWord(m_keyHandle,
                                                        NCryptNative.KeyPropertyName.Length,
                                                        CngPropertyOptions.None);
@@ -527,10 +756,20 @@ namespace System.Security.Cryptography {
             return Import(keyBlob, format, CngProvider.MicrosoftSoftwareKeyStorageProvider);
         }
 
-        [SecuritySafeCritical]
+        internal static CngKey Import(byte[] keyBlob, string curveName, CngKeyBlobFormat format) {
+            Contract.Ensures(Contract.Result<CngKey>() != null);
+            return Import(keyBlob, curveName, format, CngProvider.MicrosoftSoftwareKeyStorageProvider);
+        }
+
         public static CngKey Import(byte[] keyBlob, CngKeyBlobFormat format, CngProvider provider) {
             Contract.Ensures(Contract.Result<CngKey>() != null);
+            return Import(keyBlob, null, format, provider);
+        }
 
+        [SecuritySafeCritical]
+        internal static CngKey Import(byte[] keyBlob, string curveName, CngKeyBlobFormat format, CngProvider provider)
+        {
+            Contract.Ensures(Contract.Result<CngKey>() != null);
             if (keyBlob == null) {
                 throw new ArgumentNullException("keyBlob"); 
             }
@@ -550,6 +789,7 @@ namespace System.Security.Cryptography {
             // permission.  Since we won't know the name of the key until it's too late, we demand a full Import
             // rather than one scoped to the key.
             bool safeKeyImport = format == CngKeyBlobFormat.EccPublicBlob ||
+                                 format == CngKeyBlobFormat.EccFullPublicBlob ||
                                  format == CngKeyBlobFormat.GenericPublicBlob;
 
             if (!safeKeyImport) {
@@ -558,11 +798,17 @@ namespace System.Security.Cryptography {
 
             // Import the key into the KSP
             SafeNCryptProviderHandle kspHandle = NCryptNative.OpenStorageProvider(provider.Provider);
-            SafeNCryptKeyHandle keyHandle = NCryptNative.ImportKey(kspHandle, keyBlob, format.Format);
+            SafeNCryptKeyHandle keyHandle;
+
+            if (curveName == null) {
+                keyHandle = NCryptNative.ImportKey(kspHandle, keyBlob, format.Format);
+            } else {
+                keyHandle = ECCng.ImportKeyBlob(format.Format, keyBlob, curveName, kspHandle);
+            }
 
             // Prepare the key for use
             CngKey key = new CngKey(kspHandle, keyHandle);
-            
+
             // We can't tell directly if an OpaqueTransport blob imported as an ephemeral key or not
             key.IsEphemeral = format != CngKeyBlobFormat.OpaqueTransportBlob;
 
@@ -816,5 +1062,6 @@ namespace System.Security.Cryptography {
             Contract.Assert(m_keyHandle != null);
             NCryptNative.SetProperty(m_keyHandle, property.Name, property.Value, property.Options);
         }
+#endif
     }
 }

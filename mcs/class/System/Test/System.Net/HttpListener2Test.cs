@@ -146,6 +146,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test1 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -158,6 +161,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test2 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -170,6 +176,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test3 ()
 		{
 			StringBuilder bad = new StringBuilder ();
@@ -209,6 +218,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test4 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -221,6 +233,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test5 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -233,6 +248,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test6 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -246,6 +264,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test7 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -262,6 +283,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test8 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -279,6 +303,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test9 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -294,6 +321,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test10 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -310,6 +340,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test11 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -324,6 +357,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test12 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -338,6 +374,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test13 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -355,6 +394,9 @@ namespace MonoTests.System.Net {
 		ManualResetEvent test_evt;
 		bool test14_error;
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test14 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -391,6 +433,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test15 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -413,6 +458,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test16 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -437,6 +485,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test17 ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -453,6 +504,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test_MultipleClosesOnOuputStreamAllowed ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -483,6 +537,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void ReceiveCookiesFromClient ()
 		{
 			sendCookiePort = NetworkHelpers.FindFreePort ();			
@@ -529,6 +586,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void SendCookiestoClient ()
 		{
 			receiveCookiePort = NetworkHelpers.FindFreePort ();
@@ -580,6 +640,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void MultiResponses ()
 		{
 			echoServerPort = NetworkHelpers.FindFreePort ();
@@ -647,6 +710,9 @@ namespace MonoTests.System.Net {
 	[TestFixture]
 	public class HttpListenerBugs {
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void TestNonChunkedAsync ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -701,6 +767,9 @@ namespace MonoTests.System.Net {
 		// a documented pattern to close the connection
 		// 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test_MultipleConnections ()
 		{
 			var port = NetworkHelpers.FindFreePort ();			
@@ -731,6 +800,9 @@ namespace MonoTests.System.Net {
 		// Test case for bug 341443, an pretty old bug, filed on November of 2007.
 		//
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test_HostInUri ()
 		{
 			var wait = new ManualResetEvent (false);
@@ -760,6 +832,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test] // bug #513849
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void ClosePort ()
 		{
 			var port = NetworkHelpers.FindFreePort ();
@@ -783,6 +858,9 @@ namespace MonoTests.System.Net {
 		// does not also listen to another interface.
 		//
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void BindToSingleInterface ()
 		{
 			IPAddress [] machineAddress = null;
@@ -796,8 +874,14 @@ namespace MonoTests.System.Net {
 			
 			int port = NetworkHelpers.FindFreePort ();;
 			var h = new HttpListener ();
-			h.Prefixes.Add ("http://" + machineAddress [0] + ":" + port + "/");
-			h.Start ();
+			// Listen on the first IPV4 interface
+			foreach (IPAddress a in machineAddress) {
+				if (a.AddressFamily == AddressFamily.InterNetwork) {
+					h.Prefixes.Add ("http://" + a + ":" + port + "/");
+					h.Start ();
+					break;
+				}
+			}
 
 			try {
 				var c = new TcpClient ("localhost", port);
@@ -809,6 +893,9 @@ namespace MonoTests.System.Net {
 		}
 
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void BindToAllInterfaces ()
 		{
 			var h = new HttpListener ();
@@ -821,6 +908,9 @@ namespace MonoTests.System.Net {
 
 		// Test case for bug #31209
 		[Test]
+#if FEATURE_NO_BSD_SOCKETS
+		[ExpectedException (typeof (PlatformNotSupportedException))]
+#endif
 		public void Test_EmptyLineAtStart ()
 		{
 			var port = NetworkHelpers.FindFreePort ();

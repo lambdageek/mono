@@ -11,7 +11,8 @@ LIBRARY = System.ServiceModel.Primitives.dll
 
 KEY_FILE = ../../msfinal.pub
 SIGN_FLAGS = /delaysign /keyfile:$(KEY_FILE) /nowarn:1616,1699
-LIB_REFS = System.ServiceModel System.Xml
+LIB_REFS = System System.ServiceModel System.Xml System.IdentityModel Facades/System.Security.Cryptography.X509Certificates
+
 LIB_MCS_FLAGS = $(SIGN_FLAGS) 
 
 PLATFORM_DEBUG_FLAGS =

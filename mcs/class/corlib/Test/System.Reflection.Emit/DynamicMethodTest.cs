@@ -11,9 +11,11 @@ using System;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
+using System.Linq;
 
 using NUnit.Framework;
 
@@ -441,6 +443,31 @@ namespace MonoTests.System.Reflection.Emit
 			f.Method.GetMethodBody ();
 		}
 
+		[Test]
+		public void GetCustomAttributes ()
+		{
+			var method = new DynamicMethod ("method", typeof (void), new Type [] { });
+
+			var methodImplAttrType = typeof (MethodImplAttribute);
+			Assert.IsTrue (method.IsDefined (methodImplAttrType, true), "MethodImplAttribute is defined");
+
+			// According to the spec, MethodImplAttribute is the
+			// only custom attr that's present on a DynamicMethod.
+			// And it's always a managed method with no inlining.
+			var a1 = method.GetCustomAttributes (true);
+			Assert.AreEqual (a1.Length, 1, "a1.Length == 1");
+			Assert.AreEqual (a1[0].GetType (), methodImplAttrType, "a1[0] is a MethodImplAttribute");
+			var options = (a1[0] as MethodImplAttribute).Value;
+			Assert.IsTrue ((options & MethodImplOptions.NoInlining) != 0, "NoInlining is set");
+			Assert.IsTrue ((options & MethodImplOptions.Unmanaged) == 0, "Unmanaged isn't set");
+
+
+			// any other custom attribute type
+			var extensionAttrType = typeof (ExtensionAttribute);
+			Assert.IsFalse (method.IsDefined (extensionAttrType, true));
+			Assert.AreEqual (Array.Empty<object>(), method.GetCustomAttributes (extensionAttrType, true));
+		}
+
 	public delegate object RetObj();
 		[Test] //#640702
 		public void GetCurrentMethodWorksWithDynamicMethods ()
@@ -517,7 +544,10 @@ namespace MonoTests.System.Reflection.Emit
 			invoke (456324);
 
 			Assert.IsNotNull (ExceptionHandling_Test_Support.Caught, "#1");
-			Assert.AreEqual (2, ExceptionHandling_Test_Support.CaughtStackTrace.Split (new[] { Environment.NewLine }, StringSplitOptions.None).Length, "#2");
+
+			var lines = ExceptionHandling_Test_Support.CaughtStackTrace.Split (new[] { Environment.NewLine }, StringSplitOptions.None);
+			lines = lines.Where (l => !l.StartsWith ("[")).ToArray ();
+			Assert.AreEqual (2, lines.Length, "#2");
 
 			var st = new StackTrace (ExceptionHandling_Test_Support.Caught, 0, true);
 
@@ -552,9 +582,12 @@ namespace MonoTests.System.Reflection.Emit
 
 			public static void Handler (Exception e)
 			{
-				var split = e.StackTrace.Split (new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
-				Assert.AreEqual (5, split.Length, "#1");
-				Assert.IsTrue (split [1].Contains ("---"), "#2");
+				var lines = e.StackTrace.Split (new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
+				// Ignore Metadata
+				lines = lines.Where (l => !l.StartsWith ("[")).ToArray ();
+
+				Assert.AreEqual (5, lines.Length, "#1");
+				Assert.IsTrue (lines [1].Contains ("---"), "#2");
 			}
 		}
 

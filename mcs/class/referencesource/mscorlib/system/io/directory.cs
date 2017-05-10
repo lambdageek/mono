@@ -7,7 +7,7 @@
 **
 ** Class:  Directory
 ** 
-** <OWNER>[....]</OWNER>
+** <OWNER>Microsoft</OWNER>
 **
 **
 ** Purpose: Exposes routines for enumerating through a 
@@ -37,7 +37,8 @@ using System.Security.AccessControl;
 
 namespace System.IO {
     [ComVisible(true)]
-    public static class Directory {
+    public static partial class Directory {
+#if !MONO
         [ResourceExposure(ResourceScope.Machine)]
         [ResourceConsumption(ResourceScope.Machine)]
         public static DirectoryInfo GetParent(String path)
@@ -102,53 +103,70 @@ namespace System.IO {
         [System.Security.SecurityCritical] 
         [ResourceExposure(ResourceScope.Machine)]
         [ResourceConsumption(ResourceScope.Machine)]
-        internal static DirectoryInfo InternalCreateDirectoryHelper(String path, bool checkHost)
+        internal static DirectoryInfo InternalCreateDirectoryHelper(string path, bool checkHost)
         {
             Contract.Requires(path != null);
             Contract.Requires(path.Length != 0);
 
-            String fullPath = Path.GetFullPathInternal(path);
+            string fullPath = GetFullPathAndCheckPermissions(path, checkHost: checkHost);
 
+            InternalCreateDirectory(fullPath, path, dirSecurityObj: null, checkHost: checkHost);
+
+            // Call the internal DirectoryInfo constructor
+            return new DirectoryInfo(fullPath, junk: false);
+        }
+
+        internal static string GetFullPathAndCheckPermissions(string path, bool checkHost, FileSecurityStateAccess access = FileSecurityStateAccess.Read)
+        {
+            String fullPath = Path.GetFullPathInternal(path);
+            CheckPermissions(path, fullPath, checkHost: checkHost, access: access);
+            return fullPath;
+        }
+
+        [SecuritySafeCritical]
+        internal static void CheckPermissions(string displayPath, string fullPath, bool checkHost, FileSecurityStateAccess access = FileSecurityStateAccess.Read)
+        {
             // You need read access to the directory to be returned back and write access to all the directories 
             // that you need to create. If we fail any security checks we will not create any directories at all.
             // We attempt to create directories only after all the security checks have passed. This is avoid doing
             // a demand at every level.
-            String demandDir = GetDemandDir(fullPath, true);
 
 #if FEATURE_CORECLR
             if (checkHost)
             {
-                FileSecurityState state = new FileSecurityState(FileSecurityStateAccess.Read, path, demandDir);
-                state.EnsureState(); // do the check on the AppDomainManager to make sure this is allowed  
+                FileSecurityState state = new FileSecurityState(
+                    access,
+                    path: displayPath,
+                    canonicalizedPath: GetDemandDir(fullPath, thisDirOnly: true));
+                state.EnsureState(); // do the check on the AppDomainManager to make sure this is allowed
             }
 #else
-            FileIOPermission.QuickDemand(FileIOPermissionAccess.Read, demandDir, false, false);
+            // In full trust we want to avoid allocating another string via GetDemandDir()
+            if (CodeAccessSecurityEngine.QuickCheckForAllDemands())
+                FileIOPermission.EmulateFileIOPermissionChecks(fullPath);
+            else
+                FileIOPermission.QuickDemand(
+                    (FileIOPermissionAccess)access,
+                    GetDemandDir(fullPath, thisDirOnly: true),
+                    checkForDuplicates: false,
+                    needFullPath: false);
 #endif
-
-            InternalCreateDirectory(fullPath, path, null, checkHost);
-
-            return new DirectoryInfo(fullPath, false);
         }
+
 
 #if FEATURE_MACL
         [System.Security.SecuritySafeCritical]  // auto-generated
         [ResourceExposure(ResourceScope.Machine)]
         [ResourceConsumption(ResourceScope.Machine)]
-        public static DirectoryInfo CreateDirectory(String path, DirectorySecurity directorySecurity) {
+        public static DirectoryInfo CreateDirectory(String path, DirectorySecurity directorySecurity)
+        {
             if (path==null)
                 throw new ArgumentNullException("path");
             if (path.Length == 0)
                 throw new ArgumentException(Environment.GetResourceString("Argument_PathEmpty"));
             Contract.EndContractBlock();
-            
-            String fullPath = Path.GetFullPathInternal(path);
 
-            // You need read access to the directory to be returned back and write access to all the directories 
-            // that you need to create. If we fail any security checks we will not create any directories at all.
-            // We attempt to create directories only after all the security checks have passed. This is avoid doing
-            // a demand at every level.
-            String demandDir = GetDemandDir(fullPath, true); 
-            FileIOPermission.QuickDemand(FileIOPermissionAccess.Read, demandDir, false, false );
+            string fullPath = GetFullPathAndCheckPermissions(path, checkHost: true);
 
             InternalCreateDirectory(fullPath, path, directorySecurity);
             
@@ -248,17 +266,25 @@ namespace System.IO {
 
             int count = stackDir.Count;
 
-            if (stackDir.Count != 0)
+            if (stackDir.Count != 0
+#if FEATURE_CAS_POLICY
+                // All demands in full trust domains are no-ops, so skip
+                //
+                // The full path went through validity checks by being passed through FileIOPermissions already.
+                // As a sub string of the full path can't fail the checks if the full path passes.
+                && !CodeAccessSecurityEngine.QuickCheckForAllDemands()
+#endif
+            )
             {
-                String [] securityList = new String[stackDir.Count];
+                String[] securityList = new String[stackDir.Count];
                 stackDir.CopyTo(securityList, 0);
                 for (int j = 0 ; j < securityList.Length; j++)
                     securityList[j] += "\\."; // leaf will never have a slash at the end
 
                 // Security check for all directories not present only.
-#if !FEATURE_PAL  && FEATURE_MACL
+#if !FEATURE_PAL && FEATURE_MACL
                 AccessControlActions control = (dirSecurity == null) ? AccessControlActions.None : AccessControlActions.Change;
-                new FileIOPermission(FileIOPermissionAccess.Write, control, securityList, false, false ).Demand();
+                FileIOPermission.QuickDemand(FileIOPermissionAccess.Write, control, securityList, false, false);
 #else
 #if FEATURE_CORECLR
                 if (checkHost)
@@ -270,7 +296,7 @@ namespace System.IO {
                     }
                 }
 #else
-                new FileIOPermission(FileIOPermissionAccess.Write, securityList, false, false ).Demand();
+                FileIOPermission.QuickDemand(FileIOPermissionAccess.Write, securityList, false, false );
 #endif
 #endif //!FEATURE_PAL  && FEATURE_MACL
             }
@@ -298,8 +324,9 @@ namespace System.IO {
             while (stackDir.Count > 0) {
                 String name = stackDir[stackDir.Count - 1];
                 stackDir.RemoveAt(stackDir.Count - 1);
-                if (name.Length >= Path.MAX_DIRECTORY_PATH)
+                if (PathInternal.IsDirectoryTooLong(name))
                     throw new PathTooLongException(Environment.GetResourceString("IO.PathTooLong"));
+
                 r = Win32Native.CreateDirectory(name, secAttrs);
                 if (!r && (firstError == 0)) {
                     int currentError = Marshal.GetLastWin32Error();
@@ -313,21 +340,16 @@ namespace System.IO {
                     // fail because the target does exist, but is a file.
                     if (currentError != Win32Native.ERROR_ALREADY_EXISTS)
                         firstError = currentError;
-                    else {
+                    else
+                    {
                         // If there's a file in this directory's place, or if we have ERROR_ACCESS_DENIED when checking if the directory already exists throw.
-                        if (File.InternalExists(name) || (!InternalExists(name, out currentError) && currentError == Win32Native.ERROR_ACCESS_DENIED)) {
+                        if (File.InternalExists(name) || (!InternalExists(name, out currentError) && currentError == Win32Native.ERROR_ACCESS_DENIED))
+                        {
                             firstError = currentError;
                             // Give the user a nice error message, but don't leak path information.
-                            try {
-#if FEATURE_CORECLR
-                                if (checkHost)
-                                {
-                                    FileSecurityState state = new FileSecurityState(FileSecurityStateAccess.PathDiscovery, String.Empty, GetDemandDir(name, true));
-                                    state.EnsureState();
-                                }
-#else
-                                new FileIOPermission(FileIOPermissionAccess.PathDiscovery, GetDemandDir(name, true)).Demand();
-#endif // FEATURE_CORECLR
+                            try
+                            {
+                                CheckPermissions(string.Empty, name, checkHost: checkHost, access: FileSecurityStateAccess.PathDiscovery);
                                 errorString = name;
                             }
                             catch(SecurityException) {}
@@ -365,7 +387,7 @@ namespace System.IO {
         [ResourceConsumption(ResourceScope.Machine)]
         public static bool Exists(String path)
         {
-            return InternalExistsHelper(path, true);
+            return InternalExistsHelper(path, checkHost: true);
         }
 
         [System.Security.SecurityCritical]
@@ -373,36 +395,22 @@ namespace System.IO {
         [ResourceConsumption(ResourceScope.Machine)]
         internal static bool UnsafeExists(String path)
         {
-            return InternalExistsHelper(path, false);
+            return InternalExistsHelper(path, checkHost: false);
         }
 
         [System.Security.SecurityCritical]
         [ResourceExposure(ResourceScope.Machine)]
         [ResourceConsumption(ResourceScope.Machine)]
-        internal static bool InternalExistsHelper(String path, bool checkHost) {
+        internal static bool InternalExistsHelper(String path, bool checkHost)
+        {
+            if (path == null || path.Length == 0)
+                return false;
+
             try
             {
-                if (path == null)
-                    return false;
-                if (path.Length == 0)
-                    return false;
-
-                // Get fully qualified file name ending in \* for security check
-
-                String fullPath = Path.GetFullPathInternal(path);
-                String demandPath = GetDemandDir(fullPath, true);
-
-#if FEATURE_CORECLR
-                if (checkHost)
-                {
-                    FileSecurityState state = new FileSecurityState(FileSecurityStateAccess.Read, path, demandPath);
-                    state.EnsureState();
-                }
-#else
-                FileIOPermission.QuickDemand(FileIOPermissionAccess.Read, demandPath, false, false);
-#endif
-
-
+                // This could be further optimized- there is no need to get the full path if we aren't checking our
+                // own permissions- Windows will normalize it when we get the attributes.
+                string fullPath = GetFullPathAndCheckPermissions(path, checkHost: checkHost);
                 return InternalExists(fullPath);
             }
             catch (ArgumentException) { }
@@ -412,7 +420,7 @@ namespace System.IO {
             catch (UnauthorizedAccessException)
             {
 #if !FEATURE_PAL
-                Contract.Assert(false, "Ignore this assert and send a repro to [....]. This assert was tracking purposes only.");
+                Contract.Assert(false, "Ignore this assert and send a repro to Microsoft. This assert was tracking purposes only.");
 #endif //!FEATURE_PAL
             }
             return false;
@@ -580,6 +588,8 @@ namespace System.IO {
             directorySecurity.Persist(fullPath);
         }
 #endif
+
+#endif // !MONO
 
         // Returns an array of filenames in the DirectoryInfo specified by path
         [ResourceExposure(ResourceScope.Machine)]
@@ -998,6 +1008,7 @@ namespace System.IO {
                                                                         includeFiles, includeDirs, searchOption, true);
         }
 
+#if !MONO
         // Retrieves the names of the logical drives on this machine in the 
         // form "C:\". 
         // 
@@ -1038,27 +1049,23 @@ namespace System.IO {
         [System.Security.SecuritySafeCritical]
         [ResourceExposure(ResourceScope.Machine)]
         [ResourceConsumption(ResourceScope.Machine)]
-        public static String GetDirectoryRoot(String path) {
+        public static string GetDirectoryRoot(string path)
+        {
             if (path==null)
                 throw new ArgumentNullException("path");
             Contract.EndContractBlock();
-            
-            String fullPath = Path.GetFullPathInternal(path);
-            String root = fullPath.Substring(0, Path.GetRootLength(fullPath));
-            String demandPath = GetDemandDir(root, true);
 
-#if FEATURE_CORECLR
-            FileSecurityState state = new FileSecurityState(FileSecurityStateAccess.PathDiscovery, path, demandPath);
-            state.EnsureState();
-#else
-            FileIOPermission.QuickDemand(FileIOPermissionAccess.PathDiscovery, demandPath, false, false);
-#endif
-                     
+            string fullPath = Path.GetFullPathInternal(path);
+            string root = fullPath.Substring(0, Path.GetRootLength(fullPath));
+
+            CheckPermissions(path, root, checkHost: true, access: FileSecurityStateAccess.PathDiscovery);
+
             return root;
         }
 
-        internal static String InternalGetDirectoryRoot(String path) {
-              if (path == null) return null;
+        internal static string InternalGetDirectoryRoot(string path)
+        {
+            if (path == null) return null;
             return path.Substring(0, Path.GetRootLength(path));
         }
 
@@ -1085,48 +1092,79 @@ namespace System.IO {
             return InternalGetCurrentDirectory(false);
         }
 
+        [System.Security.SecuritySafeCritical]
+        [ResourceExposure(ResourceScope.Machine)]
+        [ResourceConsumption(ResourceScope.Machine)]
+        private static string InternalGetCurrentDirectory(bool checkHost)
+        {
+            string currentDirectory = AppContextSwitches.UseLegacyPathHandling ? LegacyGetCurrentDirectory() : NewGetCurrentDirectory();
+
+            CheckPermissions(string.Empty, currentDirectory, checkHost: true, access: FileSecurityStateAccess.PathDiscovery);
+
+            return currentDirectory;
+        }
+
         [System.Security.SecurityCritical]
         [ResourceExposure(ResourceScope.Machine)]
         [ResourceConsumption(ResourceScope.Machine)]
-        private static String InternalGetCurrentDirectory(bool checkHost)
+        private static string LegacyGetCurrentDirectory()
         {
-            StringBuilder sb = StringBuilderCache.Acquire(Path.MAX_PATH + 1);
+            StringBuilder sb = StringBuilderCache.Acquire(PathInternal.MaxShortPath + 1);
             if (Win32Native.GetCurrentDirectory(sb.Capacity, sb) == 0)
                 __Error.WinIOError();
-            String currentDirectory = sb.ToString();
+            string currentDirectory = sb.ToString();
             // Note that if we have somehow put our command prompt into short
             // file name mode (ie, by running edlin or a DOS grep, etc), then
             // this will return a short file name.
-            if (currentDirectory.IndexOf('~') >= 0) {
+            if (currentDirectory.IndexOf('~') >= 0)
+            {
                 int r = Win32Native.GetLongPathName(currentDirectory, sb, sb.Capacity);
-                if (r == 0 || r >= Path.MAX_PATH) {                    
+                if (r == 0 || r >= PathInternal.MaxShortPath)
+                {
                     int errorCode = Marshal.GetLastWin32Error();
-                    if (r >= Path.MAX_PATH)
+                    if (r >= PathInternal.MaxShortPath)
                         errorCode = Win32Native.ERROR_FILENAME_EXCED_RANGE;
                     if (errorCode != Win32Native.ERROR_FILE_NOT_FOUND &&
                         errorCode != Win32Native.ERROR_PATH_NOT_FOUND &&
                         errorCode != Win32Native.ERROR_INVALID_FUNCTION &&  // by design - enough said.
                         errorCode != Win32Native.ERROR_ACCESS_DENIED)
-                        __Error.WinIOError(errorCode, String.Empty);
+                        __Error.WinIOError(errorCode, string.Empty);
                 }
                 currentDirectory = sb.ToString();
             }
             StringBuilderCache.Release(sb);
-            String demandPath = GetDemandDir(currentDirectory, true);
-
-            
-#if FEATURE_CORECLR
-            if (checkHost) 
-            {
-                FileSecurityState state = new FileSecurityState(FileSecurityStateAccess.PathDiscovery, String.Empty, demandPath);
-                state.EnsureState();
-            }
-#else
-            new FileIOPermission( FileIOPermissionAccess.PathDiscovery, new String[] { demandPath }, false, false ).Demand();
-#endif
             return currentDirectory;
         }
 
+        [System.Security.SecurityCritical]
+        [ResourceExposure(ResourceScope.Machine)]
+        [ResourceConsumption(ResourceScope.Machine)]
+        private static string NewGetCurrentDirectory()
+        {
+            using (StringBuffer buffer = new StringBuffer(PathInternal.MaxShortPath))
+            {
+                uint result = 0;
+                while ((result = Win32Native.GetCurrentDirectoryW(buffer.CharCapacity, buffer.GetHandle())) > buffer.CharCapacity)
+                {
+                    // Reported size is greater than the buffer size. Increase the capacity.
+                    // The size returned includes the null only if more space is needed (this case).
+                    buffer.EnsureCharCapacity(result);
+                }
+
+                if (result == 0)
+                {
+                    __Error.WinIOError();
+                }
+
+                buffer.Length = result;
+                if (buffer.Contains('~'))
+                {
+                    return LongPathHelper.GetLongPathName(buffer);
+                }
+
+                return buffer.ToString();
+            }
+        }
 
         #if FEATURE_CORECLR
         [System.Security.SecurityCritical] // auto-generated
@@ -1136,15 +1174,16 @@ namespace System.IO {
         [ResourceExposure(ResourceScope.Machine)]
         [ResourceConsumption(ResourceScope.Machine)]
         public static void SetCurrentDirectory(String path)
-        {        
+        {
             if (path==null)
                 throw new ArgumentNullException("value");
             if (path.Length==0)
                 throw new ArgumentException(Environment.GetResourceString("Argument_PathEmpty"));
             Contract.EndContractBlock();
-            if (path.Length >= Path.MAX_PATH)
+
+            if (PathInternal.IsPathTooLong(path))
                 throw new PathTooLongException(Environment.GetResourceString("IO.PathTooLong"));
-                
+
             // This will have some large effects on the rest of the runtime
             // and other appdomains in this process.  Demand unmanaged code.
 #pragma warning disable 618
@@ -1174,19 +1213,19 @@ namespace System.IO {
         [System.Security.SecurityCritical]
         [ResourceExposure(ResourceScope.Machine)]
         [ResourceConsumption(ResourceScope.Machine)]
-        internal static void UnsafeMove(String sourceDirName,String destDirName) {
+        internal static void UnsafeMove(String sourceDirName, String destDirName) {
             InternalMove(sourceDirName, destDirName, false);
         }
 
         [System.Security.SecurityCritical]
         [ResourceExposure(ResourceScope.Machine)]
         [ResourceConsumption(ResourceScope.Machine)]
-        private static void InternalMove(String sourceDirName,String destDirName,bool checkHost) {
+        private static void InternalMove(String sourceDirName, String destDirName, bool checkHost) {
             if (sourceDirName==null)
                 throw new ArgumentNullException("sourceDirName");
             if (sourceDirName.Length==0)
                 throw new ArgumentException(Environment.GetResourceString("Argument_EmptyFileName"), "sourceDirName");
-            
+
             if (destDirName==null)
                 throw new ArgumentNullException("destDirName");
             if (destDirName.Length==0)
@@ -1195,16 +1234,16 @@ namespace System.IO {
 
             String fullsourceDirName = Path.GetFullPathInternal(sourceDirName);
             String sourcePath = GetDemandDir(fullsourceDirName, false);
-            
-            if (sourcePath.Length >= Path.MAX_DIRECTORY_PATH)
+
+            if (PathInternal.IsDirectoryTooLong(sourcePath))
                 throw new PathTooLongException(Environment.GetResourceString("IO.PathTooLong"));
 
             String fulldestDirName = Path.GetFullPathInternal(destDirName);
             String destPath = GetDemandDir(fulldestDirName, false);
 
-            if (destPath.Length >= Path.MAX_DIRECTORY_PATH)
+            if (PathInternal.IsDirectoryTooLong(sourcePath))
                 throw new PathTooLongException(Environment.GetResourceString("IO.PathTooLong"));
-            
+
 #if FEATURE_CORECLR
             if (checkHost) {
                 FileSecurityState sourceState = new FileSecurityState(FileSecurityStateAccess.Write | FileSecurityStateAccess.Read, sourceDirName, sourcePath);
@@ -1275,11 +1314,11 @@ namespace System.IO {
         internal static void Delete(String fullPath, String userPath, bool recursive, bool checkHost)
         {
             String demandPath;
-            
+
             // If not recursive, do permission check only on this directory
             // else check for the whole directory structure rooted below 
-            demandPath = GetDemandDir(fullPath, !recursive);
-            
+            demandPath = GetDemandDir(fullPath, thisDirOnly: !recursive);
+
 #if FEATURE_CORECLR
             if (checkHost) 
             {
@@ -1288,7 +1327,7 @@ namespace System.IO {
             }
 #else
             // Make sure we have write permission to this directory
-            new FileIOPermission(FileIOPermissionAccess.Write, new String[] { demandPath }, false, false ).Demand();
+            FileIOPermission.QuickDemand(FileIOPermissionAccess.Write, demandPath, false, false);
 #endif
 
             // Do not recursively delete through reparse points.  Perhaps in a 
@@ -1453,7 +1492,6 @@ namespace System.IO {
             }
         }
 
-        // WinNT only. Win9x this code will not work.
         [System.Security.SecurityCritical]  // auto-generated
         [ResourceExposure(ResourceScope.Machine)]
         [ResourceConsumption(ResourceScope.Machine)]
@@ -1491,6 +1529,7 @@ namespace System.IO {
         private const int FILE_SHARE_DELETE = 0x00000004;
         private const int OPEN_EXISTING = 0x00000003;
         private const int FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+#endif // !MONO
     }
 
 }

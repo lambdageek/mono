@@ -1351,7 +1351,7 @@ namespace System.ServiceModel.Security
         internal class ProcessCoreAsyncResult : AsyncResult
         {
             //
-            // Encapsulate the local variables in the [....] version of ProcessCore as fields.
+            // Encapsulate the local variables in the sync version of ProcessCore as fields.
             //
             WSTrustServiceContract _trustServiceContract;
             DispatchContext _dispatchContext;
@@ -2064,7 +2064,8 @@ namespace System.ServiceModel.Security
                     throw DiagnosticUtility.ThrowHelperInvalidOperation(SR.GetString(SR.ID5004, ns));
             }
 
-            return XmlSchema.Read(new StringReader(xmlSchema), null);
+            StringReader reader = new StringReader(xmlSchema);
+            return XmlSchema.Read(new XmlTextReader(reader) { DtdProcessing = DtdProcessing.Prohibit }, null);
         }
 
         /// <summary>

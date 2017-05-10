@@ -12,7 +12,7 @@ namespace System.Web.Security.Cryptography {
     // Utility class to provide the "one true way" of getting instances of
     // cryptographic algorithms, like SymmetricAlgorithm and HashAlgorithm.
 
-    // From discussions with [....] and the crypto board, we should prefer
+    // From discussions with Microsoft and the crypto board, we should prefer
     // the CNG implementations of algorithms, then the CAPI implementations,
     // then finally managed implementations if there are no CNG / CAPI
     // implementations. The CNG / CAPI implementations are preferred for
@@ -44,6 +44,7 @@ namespace System.Web.Security.Cryptography {
             return new DESCryptoServiceProvider();
         }
 
+        [SuppressMessage("Microsoft.Security.Cryptography", "CA5354:SHA1CannotBeUsed", Justification = @"This is only used by legacy code; new features do not use this algorithm.")]
         internal static HMACSHA1 CreateHMACSHA1() {
             return new HMACSHA1();
         }

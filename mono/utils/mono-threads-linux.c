@@ -1,3 +1,7 @@
+/**
+ * \file
+ */
+
 #include <config.h>
 
 #if (defined(__linux__) && !defined(PLATFORM_ANDROID)) || defined(__FreeBSD_kernel__)
@@ -6,7 +10,7 @@
 #include <pthread.h>
 
 void
-mono_threads_core_get_stack_bounds (guint8 **staddr, size_t *stsize)
+mono_threads_platform_get_stack_bounds (guint8 **staddr, size_t *stsize)
 {
 	pthread_attr_t attr;
 

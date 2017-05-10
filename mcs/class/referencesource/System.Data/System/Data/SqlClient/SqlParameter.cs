@@ -2,8 +2,8 @@
 // <copyright file="SqlParameter.cs" company="Microsoft">
 //     Copyright (c) Microsoft Corporation.  All rights reserved.
 // </copyright>
-// <owner current="true" primary="true">[....]</owner>
-// <owner current="true" primary="false">[....]</owner>
+// <owner current="true" primary="true">Microsoft</owner>
+// <owner current="true" primary="false">Microsoft</owner>
 //------------------------------------------------------------------------------
 
 namespace System.Data.SqlClient {
@@ -99,9 +99,6 @@ namespace System.Data.SqlClient {
             }
 
             set {
-                Debug.Assert(_columnEncryptionCipherMetadata == null || value == null,
-                    "_columnEncryptionCipherMetadata should be set to a non-null value only once.");
-
                 _columnEncryptionCipherMetadata = value;
             }
         }

@@ -27,6 +27,18 @@ namespace System
                         {
                             LocalAppContext.DefineSwitchDefault(LocalAppContextSwitches.DontEnableSchUseStrongCryptoName, true);
                         }
+
+                        if (version <= 40601)
+                        {
+                            LocalAppContext.DefineSwitchDefault(LocalAppContextSwitches.MemberDescriptorEqualsReturnsFalseIfEquivalentName, true);
+                        }
+                        
+                        if (version <= 40602)
+                        {
+                            LocalAppContext.DefineSwitchDefault(LocalAppContextSwitches.DontEnableSystemDefaultTlsVersionsName, true);
+                            LocalAppContext.DefineSwitchDefault(LocalAppContextSwitches.DontEnableTlsAlertsName, true);
+                        }
+                        
                         break;
                     }
                 case "WindowsPhone":
@@ -35,6 +47,8 @@ namespace System
                         if (version <= 80100)
                         {
                             LocalAppContext.DefineSwitchDefault(LocalAppContextSwitches.DontEnableSchUseStrongCryptoName, true);
+                            LocalAppContext.DefineSwitchDefault(LocalAppContextSwitches.DontEnableSystemDefaultTlsVersionsName, true);
+                            LocalAppContext.DefineSwitchDefault(LocalAppContextSwitches.DontEnableTlsAlertsName, true);
                         }
                         break;
                     }

@@ -20,7 +20,7 @@ TXT_RESOURCE_STRINGS = \
 LIB_MCS_FLAGS = -nowarn:219,414,649,1717 -unsafe -d:ASYNC
 
 ifeq (2.1, $(FRAMEWORK_VERSION))
-LIB_MCS_FLAGS += -d:AGCLR -d:NET_2_1_HACK -d:DISABLE_XSLT_COMPILER -d:DISABLE_XSLT_SCRIPT,MONO_HYBRID_SYSTEM_XML -d:DISABLE_CAS_USE
+LIB_MCS_FLAGS += -d:AGCLR -d:DISABLE_XSLT_COMPILER -d:DISABLE_XSLT_SCRIPT,MONO_HYBRID_SYSTEM_XML -d:DISABLE_CAS_USE
 endif
 
 TEST_LIB_REFS = System.Data System.Core
@@ -49,9 +49,6 @@ xmlfiles_files = \
 EXTRA_DISTFILES = \
 	$(wildcard System.Xml.Serialization/standalone_tests/*.cs) \
 	$(wildcard System.Xml.Serialization/standalone_tests/*.output) \
-	Test/Microsoft.Test.csproj	\
-	Test/Mono.Test.csproj		\
-	Test/MonoMicro.Test.csproj	\
 	Test/XmlFiles/76102.xml		\
 	Test/XmlFiles/79683.dtd		\
 	Test/XmlFiles/496192.xml	\

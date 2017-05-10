@@ -7,8 +7,8 @@ Assembly/AssemblyInfo.cs
 ReferenceSources/CacheEntryCollection.cs
 ReferenceSources/CacheExpires.cs
 ReferenceSources/CacheUsage.cs
-ReferenceSources/R.Designer.cs
-ReferenceSources/SRef.cs
+ReferenceSources/R.cs
+
 ../referencesource/System.Runtime.Caching/Resources/RH.cs
 ../referencesource/System.Runtime.Caching/System/Caching/CacheEntryChangeMonitor.cs
 ../referencesource/System.Runtime.Caching/System/Caching/CacheEntryRemovedArguments.cs
@@ -51,3 +51,4 @@ ReferenceSources/SRef.cs
 ../referencesource/System.Runtime.Caching/System/Caching/SafeBitVector32.cs
 ../referencesource/System.Runtime.Caching/System/Caching/SafeRegistryHandle.cs
 ../referencesource/System.Runtime.Caching/System/Caching/SqlChangeMonitor.cs
+../referencesource/System.Runtime.Caching/System/Caching/SRef.cs

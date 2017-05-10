@@ -59,12 +59,11 @@ namespace System.Net
 		WaitCallback initConn;
 		bool keepAlive;
 		byte [] buffer;
-		static AsyncCallback readDoneDelegate = new AsyncCallback (ReadDone);
 		EventHandler abortHandler;
 		AbortHelper abortHelper;
 		internal WebConnectionData Data;
 		bool chunkedRead;
-		ChunkStream chunkStream;
+		MonoChunkStream chunkStream;
 		Queue queue;
 		bool reused;
 		int position;
@@ -83,7 +82,6 @@ namespace System.Net
 		HttpWebRequest connect_request;
 
 		Exception connect_exception;
-		static object classLock = new object ();
 		MonoTlsStream tlsStream;
 
 #if MONOTOUCH && !MONOTOUCH_TV && !MONOTOUCH_WATCH
@@ -91,7 +89,7 @@ namespace System.Net
 		static extern void xamarin_start_wwan (string uri);
 #endif
 
-		internal ChunkStream ChunkStream {
+		internal MonoChunkStream MonoChunkStream {
 			get { return chunkStream; }
 		}
 
@@ -101,11 +99,6 @@ namespace System.Net
 			this.sPoint = sPoint;
 			buffer = new byte [4096];
 			Data = new WebConnectionData ();
-			initConn = new WaitCallback (state => {
-				try {
-					InitConnection (state);
-				} catch {}
-				});
 			queue = wcs.Group.Queue;
 			abortHelper = new AbortHelper ();
 			abortHelper.Connection = this;
@@ -257,14 +250,16 @@ namespace System.Net
 					connect_request.Credentials = creds;
 				}
 
-				for (int i = 0; i < challenge.Length; i++) {
-					var auth = AuthenticationManager.Authenticate (challenge [i], connect_request, creds);
-					if (auth == null)
-						continue;
-					ntlm = (auth.ModuleAuthenticationType == "NTLM");
-					sb.Append ("\r\nProxy-Authorization: ");
-					sb.Append (auth.Message);
-					break;
+				if (creds != null) {
+					for (int i = 0; i < challenge.Length; i++) {
+						var auth = AuthenticationManager.Authenticate (challenge [i], connect_request, creds);
+						if (auth == null)
+							continue;
+						ntlm = (auth.ModuleAuthenticationType == "NTLM");
+						sb.Append ("\r\nProxy-Authorization: ");
+						sb.Append (auth.Message);
+						break;
+					}
 				}
 			}
 
@@ -292,11 +287,14 @@ namespace System.Net
 				}
 
 				Data.StatusCode = status;
-				Data.Challenge = result.GetValues ("Proxy-Authentic");
+				Data.Challenge = result.GetValues ("Proxy-Authenticate");
+				Data.Headers = result;
 				return false;
-			} else if (status != 200) {
-				string msg = String.Format ("The remote server returned a {0} status code.", status);
-				HandleError (WebExceptionStatus.SecureChannelFailure, null, msg);
+			}
+
+			if (status != 200) {
+				Data.StatusCode = status;
+				Data.Headers = result;
 				return false;
 			}
 
@@ -368,6 +366,9 @@ namespace System.Net
 					}
 
 					status = (int)UInt32.Parse (parts [1]);
+					if (parts.Length >= 3)
+						Data.StatusDescription = String.Join (" ", parts, 2, parts.Length - 2);
+
 					gotStatus = true;
 				}
 			}
@@ -453,13 +454,12 @@ namespace System.Net
 			}
 		}
 		
-		static void ReadDone (IAsyncResult result)
+		void ReadDone (IAsyncResult result)
 		{
-			WebConnection cnc = (WebConnection)result.AsyncState;
-			WebConnectionData data = cnc.Data;
-			Stream ns = cnc.nstream;
+			WebConnectionData data = Data;
+			Stream ns = nstream;
 			if (ns == null) {
-				cnc.Close (true);
+				Close (true);
 				return;
 			}
 
@@ -472,84 +472,84 @@ namespace System.Net
 				if (e.InnerException is ObjectDisposedException)
 					return;
 
-				cnc.HandleError (WebExceptionStatus.ReceiveFailure, e, "ReadDone1");
+				HandleError (WebExceptionStatus.ReceiveFailure, e, "ReadDone1");
 				return;
 			}
 
 			if (nread == 0) {
-				cnc.HandleError (WebExceptionStatus.ReceiveFailure, null, "ReadDone2");
+				HandleError (WebExceptionStatus.ReceiveFailure, null, "ReadDone2");
 				return;
 			}
 
 			if (nread < 0) {
-				cnc.HandleError (WebExceptionStatus.ServerProtocolViolation, null, "ReadDone3");
+				HandleError (WebExceptionStatus.ServerProtocolViolation, null, "ReadDone3");
 				return;
 			}
 
 			int pos = -1;
-			nread += cnc.position;
+			nread += position;
 			if (data.ReadState == ReadState.None) { 
 				Exception exc = null;
 				try {
-					pos = GetResponse (data, cnc.sPoint, cnc.buffer, nread);
+					pos = GetResponse (data, sPoint, buffer, nread);
 				} catch (Exception e) {
 					exc = e;
 				}
 
 				if (exc != null || pos == -1) {
-					cnc.HandleError (WebExceptionStatus.ServerProtocolViolation, exc, "ReadDone4");
+					HandleError (WebExceptionStatus.ServerProtocolViolation, exc, "ReadDone4");
 					return;
 				}
 			}
 
 			if (data.ReadState == ReadState.Aborted) {
-				cnc.HandleError (WebExceptionStatus.RequestCanceled, null, "ReadDone");
+				HandleError (WebExceptionStatus.RequestCanceled, null, "ReadDone");
 				return;
 			}
 
 			if (data.ReadState != ReadState.Content) {
 				int est = nread * 2;
-				int max = (est < cnc.buffer.Length) ? cnc.buffer.Length : est;
+				int max = (est < buffer.Length) ? buffer.Length : est;
 				byte [] newBuffer = new byte [max];
-				Buffer.BlockCopy (cnc.buffer, 0, newBuffer, 0, nread);
-				cnc.buffer = newBuffer;
-				cnc.position = nread;
+				Buffer.BlockCopy (buffer, 0, newBuffer, 0, nread);
+				buffer = newBuffer;
+				position = nread;
 				data.ReadState = ReadState.None;
-				InitRead (cnc);
+				InitRead ();
 				return;
 			}
 
-			cnc.position = 0;
+			position = 0;
 
-			WebConnectionStream stream = new WebConnectionStream (cnc, data);
+			WebConnectionStream stream = new WebConnectionStream (this, data);
 			bool expect_content = ExpectContent (data.StatusCode, data.request.Method);
 			string tencoding = null;
 			if (expect_content)
 				tencoding = data.Headers ["Transfer-Encoding"];
 
-			cnc.chunkedRead = (tencoding != null && tencoding.IndexOf ("chunked", StringComparison.OrdinalIgnoreCase) != -1);
-			if (!cnc.chunkedRead) {
-				stream.ReadBuffer = cnc.buffer;
+			chunkedRead = (tencoding != null && tencoding.IndexOf ("chunked", StringComparison.OrdinalIgnoreCase) != -1);
+			if (!chunkedRead) {
+				stream.ReadBuffer = buffer;
 				stream.ReadBufferOffset = pos;
 				stream.ReadBufferSize = nread;
 				try {
 					stream.CheckResponseInBuffer ();
 				} catch (Exception e) {
-					cnc.HandleError (WebExceptionStatus.ReceiveFailure, e, "ReadDone7");
+					HandleError (WebExceptionStatus.ReceiveFailure, e, "ReadDone7");
 				}
-			} else if (cnc.chunkStream == null) {
+			} else if (chunkStream == null) {
 				try {
-					cnc.chunkStream = new ChunkStream (cnc.buffer, pos, nread, data.Headers);
+					chunkStream = new MonoChunkStream (buffer, pos, nread, data.Headers);
 				} catch (Exception e) {
-					cnc.HandleError (WebExceptionStatus.ServerProtocolViolation, e, "ReadDone5");
+					HandleError (WebExceptionStatus.ServerProtocolViolation, e, "ReadDone5");
 					return;
 				}
 			} else {
-				cnc.chunkStream.ResetBuffer ();
+				chunkStream.ResetBuffer ();
 				try {
-					cnc.chunkStream.Write (cnc.buffer, pos, nread);
+					chunkStream.Write (buffer, pos, nread);
 				} catch (Exception e) {
-					cnc.HandleError (WebExceptionStatus.ServerProtocolViolation, e, "ReadDone6");
+					HandleError (WebExceptionStatus.ServerProtocolViolation, e, "ReadDone6");
 					return;
 				}
 			}
@@ -569,16 +569,15 @@ namespace System.Net
 			return (statusCode >= 200 && statusCode != 204 && statusCode != 304);
 		}
 
-		internal static void InitRead (object state)
+		internal void InitRead ()
 		{
-			WebConnection cnc = (WebConnection) state;
-			Stream ns = cnc.nstream;
+			Stream ns = nstream;
 
 			try {
-				int size = cnc.buffer.Length - cnc.position;
-				ns.BeginRead (cnc.buffer, cnc.position, size, readDoneDelegate, cnc);
+				int size = buffer.Length - position;
+				ns.BeginRead (buffer, position, size, ReadDone, null);
 			} catch (Exception e) {
-				cnc.HandleError (WebExceptionStatus.ReceiveFailure, e, "InitRead");
+				HandleError (WebExceptionStatus.ReceiveFailure, e, "InitRead");
 			}
 		}
 		
@@ -670,7 +669,7 @@ namespace System.Net
 						var value = s.Substring (pos_s + 1).Trim ();
 
 						var h = data.Headers;
-						if (h.AllowMultiValues (header)) {
+						if (WebHeaderCollection.AllowMultiValues (header)) {
 							h.AddInternal (header, value);
 						} else  {
 							h.SetInternal (header, value);
@@ -702,9 +701,8 @@ namespace System.Net
 			return -1;
 		}
 		
-		void InitConnection (object state)
+		void InitConnection (HttpWebRequest request)
 		{
-			HttpWebRequest request = (HttpWebRequest) state;
 			request.WebConnection = this;
 			if (request.ReuseConnection)
 				request.StoredConnection = this;
@@ -736,6 +734,15 @@ namespace System.Net
 					goto retry;
 
 				Exception cnc_exc = connect_exception;
+				if (cnc_exc == null && (Data.StatusCode == 401 || Data.StatusCode == 407)) {
+					st = WebExceptionStatus.ProtocolError;
+					if (Data.Headers == null)
+						Data.Headers = new WebHeaderCollection ();
+
+					var webResponse = new HttpWebResponse (sPoint.Address, "CONNECT", Data, null);
+					cnc_exc = new WebException (Data.StatusCode == 407 ? "(407) Proxy Authentication Required" : "(401) Unauthorized", null, st, webResponse);
+				}
+			
 				connect_exception = null;
 				request.SetWriteStreamError (st, cnc_exc);
 				Close (true);
@@ -757,7 +764,7 @@ namespace System.Net
 			lock (this) {
 				if (state.TrySetBusy ()) {
 					status = WebExceptionStatus.Success;
-					ThreadPool.QueueUserWorkItem (initConn, request);
+					ThreadPool.QueueUserWorkItem (o => { try { InitConnection ((HttpWebRequest) o); } catch {} }, request);
 				} else {
 					lock (queue) {
 #if MONOTOUCH
@@ -882,7 +889,7 @@ namespace System.Net
 				WebAsyncResult wr = new WebAsyncResult (cb, state, buffer, offset, size);
 				wr.InnerAsyncResult = result;
 				if (result == null) {
-					// Will be completed from the data in ChunkStream
+					// Will be completed from the data in MonoChunkStream
 					wr.SetCompleted (true, (Exception) null);
 					wr.DoCallback ();
 				}
@@ -896,6 +903,8 @@ namespace System.Net
 		{
 			Stream s = null;
 			lock (this) {
+				if (request.Aborted)
+					throw new WebException ("Request aborted", WebExceptionStatus.RequestCanceled);
 				if (Data.request != request)
 					throw new ObjectDisposedException (typeof (NetworkStream).FullName);
 				if (nstream == null)
@@ -942,7 +951,7 @@ namespace System.Net
 			return (nbytes != 0) ? nbytes : -1;
 		}
 
-		// To be called on chunkedRead when we can read no data from the ChunkStream yet
+		// To be called on chunkedRead when we can read no data from the MonoChunkStream yet
 		int EnsureRead (byte [] buffer, int offset, int size)
 		{
 			byte [] morebytes = null;
@@ -998,6 +1007,18 @@ namespace System.Net
 			IAsyncResult result = null;
 			try {
 				result = s.BeginWrite (buffer, offset, size, cb, state);
+			} catch (ObjectDisposedException) {
+				lock (this) {
+					if (Data.request != request)
+						return null;
+				}
+				throw;
+			} catch (IOException e) {
+				SocketException se = e.InnerException as SocketException;
+				if (se != null && se.SocketErrorCode == SocketError.NotConnected) {
+					return null;
+				}
+				throw;
 			} catch (Exception) {
 				status = WebExceptionStatus.SendFailure;
 				throw;

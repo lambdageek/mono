@@ -1,5 +1,6 @@
-/*
- * mono-gc.h: GC related public interface
+/**
+ * \file
+ * GC related public interface
  *
  */
 #ifndef __METADATA_MONO_GC_H__
@@ -50,6 +51,8 @@ MONO_API int    mono_gc_get_generation  (MonoObject *object);
 MONO_API int    mono_gc_collection_count (int generation);
 MONO_API int64_t mono_gc_get_used_size   (void);
 MONO_API int64_t mono_gc_get_heap_size   (void);
+MONO_API MonoBoolean mono_gc_pending_finalizers (void);
+MONO_API void     mono_gc_finalize_notify    (void);
 MONO_API int    mono_gc_invoke_finalizers (void);
 /* heap walking is only valid in the pre-stop-world event callback */
 MONO_API int    mono_gc_walk_heap        (int flags, MonoGCReferences callback, void *data);

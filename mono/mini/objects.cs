@@ -639,6 +639,7 @@ class Tests {
 	public static int test_0_vector_array_cast () {
 		Array arr1 = Array.CreateInstance (typeof (int), new int[] {1}, new int[] {0});
 		Array arr2 = Array.CreateInstance (typeof (int), new int[] {1}, new int[] {10});
+		Array arr5 = Array.CreateInstance (typeof (string), new int[] {1}, new int[] {10});
 
 		if (arr1.GetType () != typeof (int[]))
 			return 1;
@@ -659,6 +660,9 @@ class Tests {
 
 		if (arr2 is int[])
 			return 4;
+		var as_object_arr = arr5 as object [];
+		if (as_object_arr != null)
+			return 5;
 
 		int [,] [] arr3 = new int [1, 1] [];
 		object o = arr3;
@@ -874,6 +878,23 @@ class Tests {
 		return 2;
 	}
 
+	class InstanceDelegateTest {
+		public int a;
+
+		public int return_field () {
+			return a;
+		}
+	}
+
+	public static int test_2_instance_delegate_with_field () {
+		InstanceDelegateTest t = new InstanceDelegateTest () { a = 1337 };
+		GetIntDel del = new GetIntDel (t.return_field);
+		int v = del ();
+		if (v != 1337)
+			return 0;
+		return 2;
+	}
+
 	interface IFaceVirtualDel {
 		int return_field ();
 	}
@@ -1011,6 +1032,19 @@ class Tests {
 		if (!(b <= System.Byte.MaxValue))
 			return 3;
 		
+		return 0;
+	}
+
+	static Nullable<bool> s_nullb;
+	static AStruct s_struct1;
+
+	/* test if VES uses correct sizes for value type write to static field */
+	public static int test_0_static_nullable_bool () {
+		s_struct1 = new AStruct (0x1337dead);
+		s_nullb = true;
+		/* make sure that the write to s_nullb didn't smash the value after it */
+		if (s_struct1.i != 0x1337dead)
+			return 2;
 		return 0;
 	}
 
@@ -1765,6 +1799,16 @@ ncells ) {
 	public static int test_142_byte_enum_arg_zero_extend () {
 		return enum_arg_zero_extend (ByteEnum2.High);
 	}
+
+	enum Mine { One, Two }
+
+	public static int test_0_enum_gethashcode_opt () {
+		int sum = 0;
+        for (int i = 0; i < 1000000; ++i)
+			sum += Mine.Two.GetHashCode();
+
+        return 0;
+    }
 }
 
 #if __MOBILE__

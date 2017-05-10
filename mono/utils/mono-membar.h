@@ -1,5 +1,6 @@
-/*
- * mono-membar.h: Memory barrier inline functions
+/**
+ * \file
+ * Memory barrier inline functions
  *
  * Author:
  *	Mark Probst (mark.probst@gmail.com)
@@ -49,21 +50,6 @@ static inline void mono_memory_write_barrier (void)
 static inline void mono_memory_barrier (void)
 {
 	__sync_synchronize ();
-}
-
-static inline void mono_memory_read_barrier (void)
-{
-	mono_memory_barrier ();
-}
-
-static inline void mono_memory_write_barrier (void)
-{
-	mono_memory_barrier ();
-}
-#elif defined(__ia64__)
-static inline void mono_memory_barrier (void)
-{
-	__asm__ __volatile__ ("mf" : : : "memory");
 }
 
 static inline void mono_memory_read_barrier (void)

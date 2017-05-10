@@ -29,9 +29,11 @@
 #include <mono/metadata/class-internals.h>
 #include <mono/metadata/object-internals.h>
 #include <mono/metadata/loader.h>
-#include <mono/metadata/assembly.h>
+#include <mono/metadata/assembly-internals.h>
 #include <mono/metadata/appdomain.h>
+#include <mono/metadata/w32handle.h>
 #include <mono/utils/bsearch.h>
+#include <mono/utils/mono-counters.h>
 
 static void     setup_filter          (MonoImage *image);
 static gboolean should_include_type   (int idx);
@@ -1617,7 +1619,7 @@ struct {
  *
  * Disassembles the @file file.
  */
-static void
+static int
 disassemble_file (const char *file)
 {
 	MonoImageOpenStatus status;
@@ -1626,7 +1628,7 @@ disassemble_file (const char *file)
 	img = mono_image_open (file, &status);
 	if (!img) {
 		fprintf (stderr, "Error while trying to process %s\n", file);
-		return;
+		return 1;
 	} else {
 		/* FIXME: is this call necessary? */
 		mono_assembly_load_from_full (img, file, &status, FALSE);
@@ -1659,6 +1661,7 @@ disassemble_file (const char *file)
 	}
 	
 	mono_image_close (img);
+	return 0;
 }
 
 typedef struct {
@@ -1841,22 +1844,25 @@ load_filter (const char* filename)
 
 
 static gboolean
-try_load_from (MonoAssembly **assembly, const gchar *path1, const gchar *path2,
-					const gchar *path3, const gchar *path4, gboolean refonly)
+try_load_from (MonoAssembly **assembly,
+	       const gchar *path1, const gchar *path2,
+	       const gchar *path3, const gchar *path4, gboolean refonly,
+	       MonoAssemblyCandidatePredicate predicate, gpointer user_data)
 {
 	gchar *fullpath;
 
 	*assembly = NULL;
 	fullpath = g_build_filename (path1, path2, path3, path4, NULL);
 	if (g_file_test (fullpath, G_FILE_TEST_IS_REGULAR))
-		*assembly = mono_assembly_open_full (fullpath, NULL, refonly);
+		*assembly = mono_assembly_open_predicate (fullpath, refonly, FALSE, predicate, user_data, NULL);
 
 	g_free (fullpath);
 	return (*assembly != NULL);
 }
 
 static MonoAssembly *
-real_load (gchar **search_path, const gchar *culture, const gchar *name, gboolean refonly)
+real_load (gchar **search_path, const gchar *culture, const gchar *name, gboolean refonly,
+	   MonoAssemblyCandidatePredicate predicate, gpointer user_data)
 {
 	MonoAssembly *result = NULL;
 	gchar **path;
@@ -1880,22 +1886,22 @@ real_load (gchar **search_path, const gchar *culture, const gchar *name, gboolea
 		/* See test cases in bug #58992 and bug #57710 */
 		/* 1st try: [culture]/[name].dll (culture may be empty) */
 		strcpy (filename + len - 4, ".dll");
-		if (try_load_from (&result, *path, local_culture, "", filename, refonly))
+		if (try_load_from (&result, *path, local_culture, "", filename, refonly, predicate, user_data))
 			break;
 
 		/* 2nd try: [culture]/[name].exe (culture may be empty) */
 		strcpy (filename + len - 4, ".exe");
-		if (try_load_from (&result, *path, local_culture, "", filename, refonly))
+		if (try_load_from (&result, *path, local_culture, "", filename, refonly, predicate, user_data))
 			break;
 
 		/* 3rd try: [culture]/[name]/[name].dll (culture may be empty) */
 		strcpy (filename + len - 4, ".dll");
-		if (try_load_from (&result, *path, local_culture, name, filename, refonly))
+		if (try_load_from (&result, *path, local_culture, name, filename, refonly, predicate, user_data))
 			break;
 
 		/* 4th try: [culture]/[name]/[name].exe (culture may be empty) */
 		strcpy (filename + len - 4, ".exe");
-		if (try_load_from (&result, *path, local_culture, name, filename, refonly))
+		if (try_load_from (&result, *path, local_culture, name, filename, refonly, predicate, user_data))
 			break;
 	}
 
@@ -1915,7 +1921,7 @@ monodis_preload (MonoAssemblyName *aname,
 	gboolean refonly = GPOINTER_TO_UINT (user_data);
 
 	if (assemblies_path && assemblies_path [0] != NULL) {
-		result = real_load (assemblies_path, aname->culture, aname->name, refonly);
+		result = real_load (assemblies_path, aname->culture, aname->name, refonly, NULL, NULL);
 	}
 
 	return result;
@@ -1962,9 +1968,16 @@ usage (void)
 	exit (1);
 }
 
+static void
+thread_state_init (MonoThreadUnwindState *ctx)
+{
+}
+
 int
 main (int argc, char *argv [])
 {
+	MonoThreadInfoRuntimeCallbacks ticallbacks;
+
 	GList *input_files = NULL, *l;
 	int i, j;
 
@@ -2015,6 +2028,16 @@ main (int argc, char *argv [])
 	if (input_files == NULL)
 		usage ();
 
+	CHECKED_MONO_INIT ();
+	mono_counters_init ();
+	mono_tls_init_runtime_keys ();
+	memset (&ticallbacks, 0, sizeof (ticallbacks));
+	ticallbacks.thread_state_init = thread_state_init;
+#ifndef HOST_WIN32
+	mono_w32handle_init ();
+#endif
+	mono_threads_runtime_init (&ticallbacks);
+
 	mono_install_assembly_load_hook (monodis_assembly_load_hook, NULL);
 	mono_install_assembly_search_hook (monodis_assembly_search_hook, NULL);
 
@@ -2028,12 +2051,14 @@ main (int argc, char *argv [])
 
 		mono_install_assembly_preload_hook (monodis_preload, GUINT_TO_POINTER (FALSE));
 
-		disassemble_file (filename);
+		return disassemble_file (filename);
 	} else {
 		mono_init (argv [0]);
 
+		i = 0;
 		for (l = input_files; l; l = l->next)
-			disassemble_file ((const char *)l->data);
+			if (disassemble_file ((const char *)l->data) == 1) i = 1;
+		return i;
 	}
 
 	return 0;

@@ -1,5 +1,6 @@
-/*
- * sgen-archdep.h: Architecture dependent parts of SGen.
+/**
+ * \file
+ * Architecture dependent parts of SGen.
  *
  * Copyright 2001-2003 Ximian, Inc
  * Copyright 2003-2010 Novell, Inc.
@@ -26,7 +27,13 @@
 
 #elif defined(TARGET_AMD64)
 
+#ifdef HOST_WIN32
+/* The Windows x64 ABI defines no "red zone". The ABI states:
+   "All memory beyond the current address of RSP is considered volatile" */
+#define REDZONE_SIZE	0
+#else
 #define REDZONE_SIZE	128
+#endif
 
 #elif defined(TARGET_POWERPC)
 

@@ -2,11 +2,8 @@
 
 BOOTSTRAP_PROFILE = build
 
-BOOTSTRAP_MCS = MONO_PATH="$(topdir)/class/lib/$(BOOTSTRAP_PROFILE)$(PLATFORM_PATH_SEPARATOR)$$MONO_PATH" $(INTERNAL_GMCS)
-MCS = MONO_PATH="$(topdir)/class/lib/$(BOOTSTRAP_PROFILE)$(PLATFORM_PATH_SEPARATOR)$$MONO_PATH" $(INTERNAL_GMCS)
-
-# Use system resgen as we don't want local System.Windows.Forms dependency
-RESGEN = resgen2
+BOOTSTRAP_MCS = MONO_PATH="$(topdir)/class/lib/$(BOOTSTRAP_PROFILE)$(PLATFORM_PATH_SEPARATOR)$$MONO_PATH" $(INTERNAL_CSC)
+MCS = $(BOOTSTRAP_MCS)
 
 profile-check:
 	@:
@@ -31,9 +28,9 @@ PROFILE_MCS_FLAGS = \
 	$(PLATFORM_DEBUG_FLAGS)
 
 FRAMEWORK_VERSION = 2.1
-NO_TEST = yes
 
 # the tuner takes care of the install
 NO_INSTALL = yes
 MOBILE_DYNAMIC = yes
 MOBILE_PROFILE = yes
+NO_CONSOLE = yes

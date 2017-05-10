@@ -2,7 +2,7 @@
 // <copyright file="XmlILOptimizerVisitor.cs" company="Microsoft">
 //     Copyright (c) Microsoft Corporation.  All rights reserved.
 // </copyright>
-// <owner current="true" primary="true">[....]</owner>
+// <owner current="true" primary="true">Microsoft</owner>
 //------------------------------------------------------------------------------
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -2289,8 +2289,8 @@ namespace System.Xml.Xsl.IlGen {
                     if (local3.NodeType == QilNodeType.Loop) {
                         QilNode local4 = local3[0];
                         QilNode local5 = local3[1];
-                        if ( NonPositional(local2, local1) ) {
-                            // PATTERN: [CommuteFilterLoop] (Filter $iter:(For (Loop $iter2:* $ret2:*)) $cond:* ^ (NonPositional? $cond $iter)) => (Loop $iter2 (Filter $iter3:(For $ret2) (Subs $cond $iter $iter3)))
+                        if (( NonPositional(local2, local1) ) && (!( IsDocOrderDistinct(local3) ))) {
+                            // PATTERN: [CommuteFilterLoop] (Filter $iter:(For $loop:(Loop $iter2:* $ret2:*)) $cond:* ^ (NonPositional? $cond $iter) ^ ~((DocOrderDistinct? $loop))) => (Loop $iter2 (Filter $iter3:(For $ret2) (Subs $cond $iter $iter3)))
                             if (AllowReplace(XmlILOptimization.CommuteFilterLoop, local0)) {
                                 QilNode local6 = VisitFor(f.For(local5));
                                 return Replace(XmlILOptimization.CommuteFilterLoop, local0, VisitLoop(f.Loop(local4, VisitFilter(f.Filter(local6,  Subs(local2, local1, local6) )))));

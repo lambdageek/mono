@@ -1,5 +1,6 @@
-/*
- * mini-llvm-cpp.h: LLVM backend
+/**
+ * \file
+ * LLVM backend
  *
  * Authors:
  *   Zoltan Varga (vargaz@gmail.com)
@@ -44,9 +45,13 @@ mono_llvm_build_alloca (LLVMBuilderRef builder, LLVMTypeRef Ty,
 
 LLVMValueRef 
 mono_llvm_build_load (LLVMBuilderRef builder, LLVMValueRef PointerVal,
-					  const char *Name, gboolean is_volatile, BarrierKind barrier);
+					  const char *Name, gboolean is_volatile);
 
 LLVMValueRef 
+mono_llvm_build_atomic_load (LLVMBuilderRef builder, LLVMValueRef PointerVal,
+							 const char *Name, gboolean is_volatile, int alignment, BarrierKind barrier);
+
+LLVMValueRef
 mono_llvm_build_aligned_load (LLVMBuilderRef builder, LLVMValueRef PointerVal,
 							  const char *Name, gboolean is_volatile, int alignment);
 
@@ -85,6 +90,9 @@ mono_llvm_set_preserveall_cc (LLVMValueRef func);
 void
 mono_llvm_set_call_preserveall_cc (LLVMValueRef call);
 
+void
+mono_llvm_set_call_notail (LLVMValueRef call);
+
 _Unwind_Reason_Code 
 mono_debug_personality (int a, _Unwind_Action b,
 	uint64_t c, struct _Unwind_Exception *d, struct _Unwind_Context *e);
@@ -96,7 +104,7 @@ void*
 mono_llvm_create_di_builder (LLVMModuleRef module);
 
 void*
-mono_llvm_di_create_function (void *di_builder, void *cu, const char *name, const char *mangled_name, const char *dir, const char *file, int line);
+mono_llvm_di_create_function (void *di_builder, void *cu, LLVMValueRef func, const char *name, const char *mangled_name, const char *dir, const char *file, int line);
 
 void*
 mono_llvm_di_create_compile_unit (void *di_builder, const char *cu_name, const char *dir, const char *producer);
