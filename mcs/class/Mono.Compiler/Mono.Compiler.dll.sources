@@ -33,7 +33,9 @@ SimpleJit.CIL/Image.cs
 SimpleJit.CIL/Opcode.cs
 SimpleJit.CIL/OpcodesTableGenerated.cs
 
+SimpleJit.Metadata/ClrType.cs
 SimpleJit.Metadata/MethodBody.cs
+SimpleJit.Metadata/LocalVariableInfo.cs
 
 SimpleJit.Extensions/StreamExtensions.cs
 

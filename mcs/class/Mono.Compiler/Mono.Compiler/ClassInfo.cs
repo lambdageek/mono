@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 
 using SimpleJit.Metadata;
@@ -36,8 +37,20 @@ namespace Mono.Compiler
 			var maxStack = srBody.MaxStackSize;
 			var initLocals = srBody.InitLocals;
 			var localsToken = srBody.LocalSignatureMetadataToken;
-			var body = new SimpleJit.Metadata.MethodBody (bodyBytes, maxStack, initLocals, localsToken);
+			var locals = LocalVariableInfo (srBody.LocalVariables);
+			var body = new SimpleJit.Metadata.MethodBody (bodyBytes, maxStack, initLocals, localsToken, locals);
 			return new MethodInfo (this, methodName, body, m.MethodHandle);
+		}
+
+		IList<SimpleJit.Metadata.LocalVariableInfo> LocalVariableInfo (IList<System.Reflection.LocalVariableInfo> locals)
+		{
+			SimpleJit.Metadata.LocalVariableInfo[] res = new SimpleJit.Metadata.LocalVariableInfo[locals.Count];
+			int i = 0;
+			foreach (var l in locals) {
+				var t = RuntimeInformation.ClrTypeFromType (l.LocalType);
+				res[i++] = new SimpleJit.Metadata.LocalVariableInfo (t, l.LocalIndex);
+			}
+			return res;
 		}
 
 	}

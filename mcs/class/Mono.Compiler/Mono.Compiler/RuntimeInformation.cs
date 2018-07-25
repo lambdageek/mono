@@ -2,6 +2,8 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
+using SimpleJit.Metadata;
+
 namespace Mono.Compiler {
 	public class RuntimeInformation : IRuntimeInformation {
 		[MethodImplAttribute(MethodImplOptions.InternalCall)]
@@ -29,7 +31,13 @@ namespace Mono.Compiler {
 			return classInfo.GetMethodInfoFor (methodName);
 		}
 
-		public RuntimeTypeHandle VoidType { get => typeof (void).TypeHandle; }
+		public ClrType VoidType { get => ClrTypeFromType (typeof (void)); }
 
+
+		internal static ClrType ClrTypeFromType (Type t)
+		{
+			return new ClrType (t.TypeHandle);
+		}
+	       
 	}
 }
