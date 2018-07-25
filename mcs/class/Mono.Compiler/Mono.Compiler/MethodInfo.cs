@@ -22,11 +22,9 @@ namespace Mono.Compiler
 		/* Used only for MiniCompiler. This should be merged with the above constructor. */
 		/* this is a MonoMethod in C */
 		internal IntPtr MethodHandle { get; }
-		internal int Flags { get; }
 
-		internal MethodInfo (IntPtr runtimeMethodHandle, int flags) {
+		internal MethodInfo (IntPtr runtimeMethodHandle) {
 			MethodHandle = runtimeMethodHandle;
-			Flags = flags;
 		}
 	}
 }

@@ -8,7 +8,7 @@ namespace Mono.Compiler
 	{
 		public CompilationResult CompileMethod (IRuntimeInformation runtimeInfo, MethodInfo methodInfo, CompilationFlags flags, out NativeCodeHandle nativeCode)
 		{
-			byte *code = CompileMethod(methodInfo.MethodHandle, methodInfo.Flags, out long codeLength);
+			byte *code = CompileMethod(methodInfo.MethodHandle, (int) flags, out long codeLength);
 			if ((IntPtr) code == IntPtr.Zero) {
 				nativeCode = default(NativeCodeHandle);
 				return CompilationResult.InternalError;
