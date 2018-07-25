@@ -32,6 +32,7 @@ namespace Mono.Compiler
 
 		MethodInfo GetMethodInfoFor (System.Reflection.MethodInfo m, string methodName)
 		{
+			var parameters = Array.Empty<SimpleJit.Metadata.ParameterInfo> (); /* FIXME fill this in from S.R.MethodInfo */
 			var srBody = m.GetMethodBody ();
 			var bodyBytes = srBody.GetILAsByteArray ();
 			var maxStack = srBody.MaxStackSize;
@@ -39,7 +40,7 @@ namespace Mono.Compiler
 			var localsToken = srBody.LocalSignatureMetadataToken;
 			var locals = LocalVariableInfo (srBody.LocalVariables);
 			var body = new SimpleJit.Metadata.MethodBody (bodyBytes, maxStack, initLocals, localsToken, locals);
-			return new MethodInfo (this, methodName, body, m.MethodHandle);
+			return new MethodInfo (this, methodName, body, m.MethodHandle, RuntimeInformation.ClrTypeFromType (m.ReturnType), parameters);
 		}
 
 		IList<SimpleJit.Metadata.LocalVariableInfo> LocalVariableInfo (IList<System.Reflection.LocalVariableInfo> locals)
