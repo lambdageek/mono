@@ -4010,6 +4010,26 @@ mono_update_jit_stats (MonoCompile *cfg)
 	mono_jit_stats.code_reallocs += cfg->stat_code_reallocs;
 }
 
+static MonoBoolean
+ves_icall_Mono_Compiler_MiniCompiler_CompileMethod (MonoMethod *method, gint32 opt, MonoNativeCodeHandle *native_code)
+{
+	ERROR_DECL(error);
+
+	// g_printerr("%s: method = %s%s%s:%s (%p)\n",
+	// 	__func__, (m_class_get_name_space(method->klass) && m_class_get_name_space(method->klass)[0] != '\0') ? m_class_get_name_space(method->klass) : "",
+	// 		(m_class_get_name_space(method->klass) && m_class_get_name_space(method->klass)[0] != '\0') ? "." : "", m_class_get_name (method->klass), method->name, method);
+
+	native_code->blob = mono_jit_compile_method_inner (method, mono_domain_get (), opt, &native_code->length, error);
+	mono_error_set_pending_exception (error);
+
+	// g_printerr("%s: method = %s%s%s:%s (%p) -> native_code.blob = %p, native_code.length = %lld\n",
+	// 	__func__, (m_class_get_name_space(method->klass) && m_class_get_name_space(method->klass)[0] != '\0') ? m_class_get_name_space(method->klass) : "",
+	// 		(m_class_get_name_space(method->klass) && m_class_get_name_space(method->klass)[0] != '\0') ? "." : "", m_class_get_name (method->klass), method->name, method,
+	// 			native_code->blob, native_code->length);
+
+	return native_code->blob != NULL;
+}
+
 /*
  * mono_jit_compile_method_inner:
  *
@@ -4219,6 +4239,12 @@ mini_jit_init (void)
 	current_backend = g_new0 (MonoBackend, 1);
 	init_backend (current_backend);
 #endif
+}
+
+void
+mini_jit_register_icalls (void)
+{
+	mono_add_internal_call ("Mono.Compiler.MiniCompiler::CompileMethod", ves_icall_Mono_Compiler_MiniCompiler_CompileMethod);
 }
 
 void

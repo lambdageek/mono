@@ -172,6 +172,11 @@ typedef struct {
 	MonoExceptionClause *clause;
 } MonoLeaveClause;
 
+typedef struct {
+	gpointer blob;
+	gint64 length;
+} MonoNativeCodeHandle;
+
 /*
  * Information about a stack frame.
  * FIXME This typedef exists only to avoid tons of code rewriting

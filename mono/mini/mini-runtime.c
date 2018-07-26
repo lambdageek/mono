@@ -4420,6 +4420,8 @@ mini_init (const char *filename, const char *runtime_version)
 
 	register_icalls ();
 
+	mini_jit_register_icalls ();
+
 	mono_generic_sharing_init ();
 #endif
 
@@ -4507,11 +4509,6 @@ mjit_initialize (void)
 	mono_assembly_name_free (assembly_name);
 }
 
-typedef struct _NativeCodeHandle {
-	gpointer blob;
-	gint64 length;
-} NativeCodeHandle;
-
 static gpointer
 compile_method_inner (MonoMethod *method, MonoDomain *target_domain, gint32 opt, MonoError *error)
 {
@@ -4519,7 +4516,7 @@ compile_method_inner (MonoMethod *method, MonoDomain *target_domain, gint32 opt,
 		return mono_jit_compile_method_inner (method, target_domain, opt, NULL, error);
 
 	MonoObject *compiler, *method_info, *ret;
-	NativeCodeHandle native_code;
+	MonoNativeCodeHandle native_code;
 	gpointer params[4];
 
 	mono_lazy_initialize (&mjit_initialized, mjit_initialize);
@@ -4553,32 +4550,12 @@ compile_method_inner (MonoMethod *method, MonoDomain *target_domain, gint32 opt,
 	return native_code.blob;
 }
 
-static MonoBoolean
-ves_icall_Mono_Compiler_MiniCompiler_CompileMethod (MonoMethod *method, gint32 opt, NativeCodeHandle *native_code)
-{
-	ERROR_DECL(error);
-
-	// g_printerr("%s: method = %s%s%s:%s (%p)\n",
-	// 	__func__, (m_class_get_name_space(method->klass) && m_class_get_name_space(method->klass)[0] != '\0') ? m_class_get_name_space(method->klass) : "",
-	// 		(m_class_get_name_space(method->klass) && m_class_get_name_space(method->klass)[0] != '\0') ? "." : "", m_class_get_name (method->klass), method->name, method);
-
-	native_code->blob = mono_jit_compile_method_inner (method, mono_domain_get (), opt, &native_code->length, error);
-	mono_error_set_pending_exception (error);
-
-	// g_printerr("%s: method = %s%s%s:%s (%p) -> native_code.blob = %p, native_code.length = %lld\n",
-	// 	__func__, (m_class_get_name_space(method->klass) && m_class_get_name_space(method->klass)[0] != '\0') ? m_class_get_name_space(method->klass) : "",
-	// 		(m_class_get_name_space(method->klass) && m_class_get_name_space(method->klass)[0] != '\0') ? "." : "", m_class_get_name (method->klass), method->name, method,
-	// 			native_code->blob, native_code->length);
-
-	return native_code->blob != NULL;
-}
-
 typedef struct _InstalledRuntimeCode {
 	MonoJitInfo *jinfo;
 } InstalledRuntimeCode;
 
 static InstalledRuntimeCode*
-ves_icall_mjit_install_compilation_result (int compilation_result, MonoMethod *method, NativeCodeHandle native_code)
+ves_icall_mjit_install_compilation_result (int compilation_result, MonoMethod *method, MonoNativeCodeHandle native_code)
 {
 	if (compilation_result != 0) {
 		g_printerr ("mjit_install: failed with %d\n", compilation_result);
@@ -4667,8 +4644,6 @@ register_icalls (void)
 
 	mono_add_internal_call ("Mono.Compiler.RuntimeInformation::mono_install_compilation_result", ves_icall_mjit_install_compilation_result);
 	mono_add_internal_call ("Mono.Compiler.RuntimeInformation::mono_execute_installed_method", ves_icall_mjit_execute_installed_method);
-
-	mono_add_internal_call ("Mono.Compiler.MiniCompiler::CompileMethod", ves_icall_Mono_Compiler_MiniCompiler_CompileMethod);
 
 #if defined(HOST_ANDROID) || defined(TARGET_ANDROID)
 	mono_add_internal_call ("System.Diagnostics.Debugger::Mono_UnhandledException_internal",
