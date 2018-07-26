@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Collections.Generic;
 
 using Mono.Compiler;
@@ -12,16 +11,15 @@ using SimpleJit.CIL;
 namespace Mono.Compiler.BigStep
 {
     // III.1.5 Operand type table
-    internal class OpResultTypeLookup 
+    internal class OpResultTypeLookup
     {
-
         internal static ClrType? Query(Opcode op, ExtendedOpcode? exop, params ClrType[] types)
         {
             if (exop.HasValue)
             {
                 ExtendedOpcode exopcode = (ExtendedOpcode)exop;
-                switch(exop)
-                {  
+                switch (exop)
+                {
                     // Table III.4: Binary Comparison or Branch Operations
                     case ExtendedOpcode.Ceq:
                     case ExtendedOpcode.Cgt:
@@ -32,7 +30,7 @@ namespace Mono.Compiler.BigStep
                 }
             }
 
-            switch(op)
+            switch (op)
             {
                 // Table III.2: Binary Numeric Operations
                 // Table III.7: Overflow Arithmetic Operations
@@ -50,16 +48,19 @@ namespace Mono.Compiler.BigStep
                     return QueryBinaryOp(types[0], types[1]);
                 // Table III.3: Unary Numeric Operations
                 case Opcode.Neg:
-                    if (types[0] == RuntimeInformation.Int32Type && types[1] == RuntimeInformation.Int32Type){
+                    if (types[0] == RuntimeInformation.Int32TypeInstance && types[1] == RuntimeInformation.Int32TypeInstance)
+                    {
                         return RuntimeInformation.BoolType;
                     }
-                    if (types[0] == RuntimeInformation.Int64Type && types[1] == RuntimeInformation.Int64Type){
+                    if (types[0] == RuntimeInformation.Int64Type && types[1] == RuntimeInformation.Int64Type)
+                    {
                         return RuntimeInformation.BoolType;
                     }
-                    if (types[0] == RuntimeInformation.TypedRefType && types[1] == RuntimeInformation.TypedRefType){
+                    if (types[0] == RuntimeInformation.TypedRefType && types[1] == RuntimeInformation.TypedRefType)
+                    {
                         return RuntimeInformation.BoolType;
                     }
-                    if ((types[0] == RuntimeInformation.Float32Type || types[0] == RuntimeInformation.Float64Type) && 
+                    if ((types[0] == RuntimeInformation.Float32Type || types[0] == RuntimeInformation.Float64Type) &&
                         (types[1] == RuntimeInformation.Float32Type || types[1] == RuntimeInformation.Float64Type))
                     {
                         return RuntimeInformation.BoolType;
@@ -104,18 +105,18 @@ namespace Mono.Compiler.BigStep
                 case Opcode.ShrUn:
                     // operand 0: To Be Shifted
                     // operand 1: Shift-By
-                    if (types[0] == RuntimeInformation.Int32Type && 
-                       (types[1] == RuntimeInformation.Int32Type || types[1] == RuntimeInformation.NativeIntType))
+                    if (types[0] == RuntimeInformation.Int32TypeInstance &&
+                       (types[1] == RuntimeInformation.Int32TypeInstance || types[1] == RuntimeInformation.NativeIntType))
                     {
-                        return RuntimeInformation.Int32Type;
+                        return RuntimeInformation.Int32TypeInstance;
                     }
-                    if (types[0] == RuntimeInformation.Int64Type && 
-                       (types[1] == RuntimeInformation.Int32Type || types[1] == RuntimeInformation.NativeIntType))
+                    if (types[0] == RuntimeInformation.Int64Type &&
+                       (types[1] == RuntimeInformation.Int32TypeInstance || types[1] == RuntimeInformation.NativeIntType))
                     {
                         return RuntimeInformation.Int64Type;
                     }
-                    if (types[0] == RuntimeInformation.NativeIntType && 
-                       (types[1] == RuntimeInformation.Int32Type || types[1] == RuntimeInformation.NativeIntType))
+                    if (types[0] == RuntimeInformation.NativeIntType &&
+                       (types[1] == RuntimeInformation.Int32TypeInstance || types[1] == RuntimeInformation.NativeIntType))
                     {
                         return RuntimeInformation.NativeIntType;
                     }
@@ -142,8 +143,8 @@ namespace Mono.Compiler.BigStep
                     return types[0];
                 case Opcode.ConvI8:
                 case Opcode.ConvU8:
-                    if (types[0] == RuntimeInformation.Float32Type || 
-                       (types[0] == RuntimeInformation.Int32Type))
+                    if (types[0] == RuntimeInformation.Float32Type ||
+                       (types[0] == RuntimeInformation.Int32TypeInstance))
                     {
                         return RuntimeInformation.Int64Type;
                     }
@@ -160,11 +161,11 @@ namespace Mono.Compiler.BigStep
             }
         }
 
-        internal class CilTypePair 
+        internal class CilTypePair
         {
             private string notation;
 
-            private CilTypePair (ClrType ta, ClrType tb) 
+            private CilTypePair(ClrType ta, ClrType tb)
             {
                 string sa = ClrTypeToString(ta);
                 string sb = ClrTypeToString(tb);
@@ -178,7 +179,8 @@ namespace Mono.Compiler.BigStep
 
             public override bool Equals(object obj)
             {
-                if (obj != null && obj is CilTypePair){
+                if (obj != null && obj is CilTypePair)
+                {
                     return notation == ((CilTypePair)obj).notation;
                 }
 
@@ -194,28 +196,31 @@ namespace Mono.Compiler.BigStep
         // Convert the type to one of five types tracked by CLI for operator result verification
         private static String ClrTypeToString(ClrType type)
         {
-            if (type == RuntimeInformation.Int32Type)
+            if (type == RuntimeInformation.Int32TypeInstance)
             {
                 return "int32";
             }
             if (type == RuntimeInformation.Int64Type)
             {
                 return "int64";
-            } 
+            }
             if (type == RuntimeInformation.NativeIntType)
             {
                 return "nativeint";
-            } 
+            }
             else if (type == RuntimeInformation.TypedRefType)
             {
                 return "&"; // Is this even correct?
             }
-            else 
+            else
             {
                 Type t = type.AsSystemType;
-                if (t.IsClass) {
+                if (t.IsClass)
+                {
                     return "O";
-                } else {
+                }
+                else
+                {
                     return "?";
                 }
             }
@@ -228,41 +233,41 @@ namespace Mono.Compiler.BigStep
 
         private static Dictionary<CilTypePair, ClrType> binaryOpResults;
 
-        static OpResultTypeLookup() 
+        static OpResultTypeLookup()
         {
             binaryOpResults = new Dictionary<CilTypePair, ClrType>();
-            binaryOpResults[CilTypePair.Create(RuntimeInformation.Int32Type, RuntimeInformation.Int32Type)] 
-                = RuntimeInformation.Int32Type;
-            binaryOpResults[CilTypePair.Create(RuntimeInformation.Int64Type, RuntimeInformation.Int64Type)] 
+            binaryOpResults[CilTypePair.Create(RuntimeInformation.Int32TypeInstance, RuntimeInformation.Int32TypeInstance)]
+                = RuntimeInformation.Int32TypeInstance;
+            binaryOpResults[CilTypePair.Create(RuntimeInformation.Int64Type, RuntimeInformation.Int64Type)]
                 = RuntimeInformation.Int64Type;
-            binaryOpResults[CilTypePair.Create(RuntimeInformation.Int32Type, RuntimeInformation.NativeIntType)] 
+            binaryOpResults[CilTypePair.Create(RuntimeInformation.Int32TypeInstance, RuntimeInformation.NativeIntType)]
                 = RuntimeInformation.NativeIntType;
-            binaryOpResults[CilTypePair.Create(RuntimeInformation.NativeIntType, RuntimeInformation.Int32Type)] 
+            binaryOpResults[CilTypePair.Create(RuntimeInformation.NativeIntType, RuntimeInformation.Int32TypeInstance)]
                 = RuntimeInformation.NativeIntType;
-            binaryOpResults[CilTypePair.Create(RuntimeInformation.NativeIntType, RuntimeInformation.NativeIntType)] 
+            binaryOpResults[CilTypePair.Create(RuntimeInformation.NativeIntType, RuntimeInformation.NativeIntType)]
                 = RuntimeInformation.NativeIntType;
 
             // For F types, always result in long type for now. This needs re-visiting
-            binaryOpResults[CilTypePair.Create(RuntimeInformation.Float32Type, RuntimeInformation.Float32Type)] 
+            binaryOpResults[CilTypePair.Create(RuntimeInformation.Float32Type, RuntimeInformation.Float32Type)]
                 = RuntimeInformation.Float64Type;
-            binaryOpResults[CilTypePair.Create(RuntimeInformation.Float32Type, RuntimeInformation.Float64Type)] 
+            binaryOpResults[CilTypePair.Create(RuntimeInformation.Float32Type, RuntimeInformation.Float64Type)]
                 = RuntimeInformation.Float64Type;
-            binaryOpResults[CilTypePair.Create(RuntimeInformation.Float64Type, RuntimeInformation.Float32Type)] 
+            binaryOpResults[CilTypePair.Create(RuntimeInformation.Float64Type, RuntimeInformation.Float32Type)]
                 = RuntimeInformation.Float64Type;
-            binaryOpResults[CilTypePair.Create(RuntimeInformation.Float64Type, RuntimeInformation.Float64Type)] 
+            binaryOpResults[CilTypePair.Create(RuntimeInformation.Float64Type, RuntimeInformation.Float64Type)]
                 = RuntimeInformation.Float64Type;
 
             // For & types, they are only applicable to certain OPs. 
             // But since we assume the validity of the input, do not perform such checks.
-            binaryOpResults[CilTypePair.Create(RuntimeInformation.Int32Type, RuntimeInformation.TypedRefType)] 
+            binaryOpResults[CilTypePair.Create(RuntimeInformation.Int32TypeInstance, RuntimeInformation.TypedRefType)]
                 = RuntimeInformation.TypedRefType;
-            binaryOpResults[CilTypePair.Create(RuntimeInformation.NativeIntType, RuntimeInformation.TypedRefType)] 
+            binaryOpResults[CilTypePair.Create(RuntimeInformation.NativeIntType, RuntimeInformation.TypedRefType)]
                 = RuntimeInformation.TypedRefType;
-            binaryOpResults[CilTypePair.Create(RuntimeInformation.TypedRefType, RuntimeInformation.Int32Type)] 
+            binaryOpResults[CilTypePair.Create(RuntimeInformation.TypedRefType, RuntimeInformation.Int32TypeInstance)]
                 = RuntimeInformation.TypedRefType;
-            binaryOpResults[CilTypePair.Create(RuntimeInformation.TypedRefType, RuntimeInformation.NativeIntType)] 
+            binaryOpResults[CilTypePair.Create(RuntimeInformation.TypedRefType, RuntimeInformation.NativeIntType)]
                 = RuntimeInformation.TypedRefType;
-            binaryOpResults[CilTypePair.Create(RuntimeInformation.TypedRefType, RuntimeInformation.TypedRefType)] 
+            binaryOpResults[CilTypePair.Create(RuntimeInformation.TypedRefType, RuntimeInformation.TypedRefType)]
                 = RuntimeInformation.TypedRefType;
         }
     }

@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Collections.Generic;
 
 using Mono.Compiler;
@@ -20,7 +19,9 @@ namespace Mono.Compiler.BigStep
         /// <summary> The operand is a machine-defined local variable for temporary use. </summary>
         Temp,
         /// <summary> The operand is a constant value stored as part of the instruction. </summary>
-        Const
+        Const,
+        /// <summary> The operand is a value for the logical program counter. </summary>
+        PC
     }
 
     internal interface IOperand 
@@ -41,6 +42,19 @@ namespace Mono.Compiler.BigStep
         }
 
         public virtual OperandType OperandType { get; }
+    }
+
+    internal class BranchTargetOperand : Operand
+    {
+        public int PC { get; private set; }
+
+        internal BranchTargetOperand(int pcvalue) 
+            : base("PC", RuntimeInformation.VoidTypeInstance) 
+        {
+            PC = pcvalue;
+        }
+
+        public override OperandType OperandType => OperandType.PC;       
     }
 
     internal class ArgumentOperand : Operand 
@@ -86,7 +100,7 @@ namespace Mono.Compiler.BigStep
         public int Value { get; private set; }
 
         internal Int32ConstOperand(int value) 
-        : base(RuntimeInformation.Int32Type) 
+        : base(RuntimeInformation.Int32TypeInstance) 
         {
             Value = value;
         }

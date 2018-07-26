@@ -16,6 +16,12 @@ Mono.Compiler.BigStep/BigStep.cs
 Mono.Compiler.BigStep/BSType.cs
 Mono.Compiler.BigStep/ArgStack.cs
 
+Mono.Compiler.BigStep/CILSymbolicExecutor.cs
+Mono.Compiler.BigStep/OpResultTypeLookup.cs
+Mono.Compiler.BigStep/Operand.cs
+Mono.Compiler.BigStep/OperationProcessor.cs
+Mono.Compiler.BigStep/LLVM/BitCodeEmitter.cs
+
 LLVMSharp/Conversions.cs
 LLVMSharp/ExecutionEngine.cs
 LLVMSharp/Generated.Custom.cs

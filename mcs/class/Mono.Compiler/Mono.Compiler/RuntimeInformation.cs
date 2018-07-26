@@ -33,6 +33,7 @@ namespace Mono.Compiler {
 
 		/* Primitive types */
 		public ClrType VoidType { get => ClrTypeFromType (typeof (void)); }
+		public ClrType Int32Type { get => ClrTypeFromType (typeof (System.Int32)); }
 		
 		public static ClrType VoidTypeInstance { get => ClrTypeFromType (typeof (void)); }
 
@@ -50,7 +51,7 @@ namespace Mono.Compiler {
 		public static ClrType Int16Type { get => ClrTypeFromType (typeof (System.Int16)); }
 		public static ClrType UInt16Type { get => ClrTypeFromType (typeof (System.UInt16)); }
 
-		public static ClrType Int32Type { get => ClrTypeFromType (typeof (System.Int32)); }
+		public static ClrType Int32TypeInstance { get => ClrTypeFromType (typeof (System.Int32)); }
 		public static ClrType UInt32Type { get => ClrTypeFromType (typeof (System.UInt32)); }
 
 		public static ClrType Int64Type { get => ClrTypeFromType (typeof (System.Int16)); }
@@ -64,11 +65,9 @@ namespace Mono.Compiler {
 
 		public static ClrType TypedRefType { get => ClrTypeFromType (typeof (System.TypedReference)); }
 
-
 		internal static ClrType ClrTypeFromType (Type t)
 		{
 			return new ClrType (t.TypeHandle);
-		}
-	       
+		} 
 	}
 }

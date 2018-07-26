@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Collections.Generic;
 
 using Mono.Compiler;
@@ -9,7 +8,8 @@ using SimpleJit.CIL;
 namespace Mono.Compiler.BigStep
 {
     /// <summary>
-    ///   Emulate CIL execution and delegates further handling for each operation to a processor.
+    ///   Emulate CIL execution only in the sense of stack change and delegates further handling for 
+    ///   each operation to a processor.
     /// </summary>
     /// <remarks>
     ///   This class partially implements stack-based virtual machine as codified by ECMA-335. It tracks
@@ -18,9 +18,8 @@ namespace Mono.Compiler.BigStep
     ///   operation. LLVM bitcode emitter is implemented as a processor.
     /// </remarks>
     public class CILSymbolicExecutor : INameGenerator
-	{
+    {
         private IOperationProcessor processor;
-        private BigStep.Env env;
         private IRuntimeInformation runtime;
         private MethodBody body;
 
@@ -30,52 +29,141 @@ namespace Mono.Compiler.BigStep
         private List<LocalOperand> locals;
         private List<ArgumentOperand> args;
 
+        // Physical => Logical index mapping for instructions which are jump targets
+        private Dictionary<int, int> targetIndices;
+
         // INameGenerator
         public string NextName()
         {
             return (tempSeq++).ToString();
         }
 
-		public CILSymbolicExecutor (
+        public CILSymbolicExecutor(
             IOperationProcessor processor,
-            BigStep.Env env, 
-            IRuntimeInformation runtime, 
+            IRuntimeInformation runtime,
             MethodInfo methodInfo)
-		{
+        {
             this.processor = processor;
-			this.env = env;
             this.runtime = runtime;
-			this.body = methodInfo.Body;
+            this.body = methodInfo.Body;
 
             this.stack = new Stack<TempOperand>();
+            this.targetIndices = new Dictionary<int, int>();
 
-            this.locals = body.LocalVariables
-                .Select(lvi => new LocalOperand(lvi.LocalIndex, lvi.LocalType))
-                //.OrderBy(lod => lod.Name) // Not necessary since the input is sorted by index already
-                .ToList();
-            this.args = methodInfo.Parameters
-                .Select(lvi => new ArgumentOperand(lvi.Position, lvi.ParameterType))
-                //.OrderBy(lod => lod.Name) // Not necessary since the input is sorted by index already
-                .ToList();
-		}
+            // The input is already ordered by index.
+            this.locals = new List<LocalOperand>();
+            foreach (LocalVariableInfo lvi in body.LocalVariables)
+            {
+                this.locals.Add(new LocalOperand(lvi.LocalIndex, lvi.LocalType));
+            }
+
+            // The input is already ordered by index.
+            this.args = new List<ArgumentOperand>();
+            foreach (ParameterInfo pi in methodInfo.Parameters)
+            {
+                this.args.Add(new ArgumentOperand(pi.Position, pi.ParameterType));
+            }
+        }
 
         public void Execute()
         {
+            Pass1();
+            Pass2();
+        }
+
+        /// In pass 1, collect jump information
+        private void Pass1()
+        {
+            // The jump info encoded in CIL is the byte offset within the method. But for the processor
+            // we want to represent jump target with the logical index of the first instruction in BB.
+            // To collect these info in one pass, use two data structures to cross-reference the logical-physical
+            // mapping.
+
+            // logical => physical. This contains all instructions.
+            List<int> lpIndices = new List<int>();
+            // physical => logical. This contains all instructions.
+            Dictionary<int, int> plIndices = new Dictionary<int, int>();
+
             var iter = body.GetIterator();
-			while (iter.MoveNext()) {
-				Opcode opcode = iter.Opcode;
+            while (iter.MoveNext())
+            {
+                Opcode opcode = iter.Opcode;
                 ExtendedOpcode? extOpCode = null;
-				if (opcode == Opcode.ExtendedPrefix){
+                if (opcode == Opcode.ExtendedPrefix)
+                {
                     extOpCode = iter.ExtOpcode;
                 }
-				OpcodeFlags opflags = iter.Flags;
+                OpcodeFlags opflags = iter.Flags;
+
+                // Record this instruction in both mappings
+                int pindex = iter.Index;
+                lpIndices.Add(pindex);
+                int lindex = lpIndices.Count - 1;
+                plIndices[pindex] = lindex;
+                // Check if there is an entry in targets for this instruction
+                if (targetIndices.ContainsKey(pindex))
+                {
+                    // If so, populate the entry with P index we just learned
+                    targetIndices[pindex] = lindex;
+                }
+
+                switch (opcode)
+                {
+                    case Opcode.Br:
+                    case Opcode.BrS:
+                    case Opcode.Brfalse:
+                    case Opcode.BrfalseS:
+                    case Opcode.Brtrue:
+                    case Opcode.BrtrueS:
+                        int target = DecodeBranchTarget(iter);
+                        if (target <= pindex)
+                        {
+                            // CASE I: Jump backward
+                            // If jumping backward, we already have everything.
+                            targetIndices[pindex] = plIndices[pindex];
+                        }
+                        else
+                        {
+                            // CASE II: Jump forward
+                            // If jumping forward, we don't know the logic index yet. The value 
+                            // will be filled later when we reach that instruction.
+                            targetIndices[pindex] = -1;
+                        }
+                        break;
+                }
+            }
+        }
+
+        private int DecodeBranchTarget(IlIterator iter)
+        {
+            int opParam = iter.DecodeParamI();
+            // Use next index to skip the bytes for the current instruction.
+            int target = iter.NextIndex + opParam;
+            return target;
+        }
+
+        /// In pass 2, emulate execution
+        private void Pass2()
+        {
+            int index = 0;
+            var iter = body.GetIterator();
+            while (iter.MoveNext())
+            {
+                Opcode opcode = iter.Opcode;
+                ExtendedOpcode? extOpCode = null;
+                if (opcode == Opcode.ExtendedPrefix)
+                {
+                    extOpCode = iter.ExtOpcode;
+                }
+                OpcodeFlags opflags = iter.Flags;
                 int opParam = 0;
                 IOperand output = null;
 
                 // 1) Collect operands
                 List<IOperand> operands = new List<IOperand>();
                 // 1.1) operands not from stack
-                switch(opcode){
+                switch (opcode)
+                {
                     // 1.1.1) operands from Arguments
                     case Opcode.Ldarg0:
                         operands.Add(output = args[0]);
@@ -94,6 +182,9 @@ namespace Mono.Compiler.BigStep
                         operands.Add(output = args[opParam]);
                         break;
                     // 1.1.2) operands from Locals
+                    case Opcode.Ldloc0:
+                        operands.Add(output = locals[0]);
+                        break;
                     case Opcode.Ldloc1:
                         operands.Add(output = locals[1]);
                         break;
@@ -144,13 +235,14 @@ namespace Mono.Compiler.BigStep
                     case Opcode.LdcR4:
                     case Opcode.LdcR8:
                         throw new Exception($"TODO: Cannot handle {opcode.ToString()} yet.");
-                    // TODO:  ExtendedOpcode.Ldloc
+                        // TODO:  ExtendedOpcode.Ldloc
                 }
 
                 // 1.2) operands to be popped from stack
-				PopBehavior popbhv = iter.PopBehavior;
+                PopBehavior popbhv = iter.PopBehavior;
                 int popCount = 0;
-                switch(popbhv){
+                switch (popbhv)
+                {
                     case PopBehavior.Pop0:
                         popCount = 0;
                         break;
@@ -186,7 +278,7 @@ namespace Mono.Compiler.BigStep
 
                 int count = popCount;
                 ClrType[] exprOdTypes = new ClrType[count];
-                while (count > 0) 
+                while (count > 0)
                 {
                     TempOperand tmp = stack.Pop();
                     operands.Add(tmp);
@@ -197,6 +289,17 @@ namespace Mono.Compiler.BigStep
                 // Additional operands
                 switch (opcode)
                 {
+                    case Opcode.Br:
+                    case Opcode.BrS:
+                    case Opcode.Brfalse:
+                    case Opcode.BrfalseS:
+                    case Opcode.Brtrue:
+                    case Opcode.BrtrueS:
+                        int target = DecodeBranchTarget(iter);
+                        int logicIndex = targetIndices[target];
+                        BranchTargetOperand bto = new BranchTargetOperand(logicIndex);
+                        operands.Add(bto);
+                        break;
                     case Opcode.Stloc0:
                         operands.Add(locals[0]);
                         break;
@@ -213,27 +316,27 @@ namespace Mono.Compiler.BigStep
                         opParam = iter.DecodeParamI();
                         operands.Add(locals[opParam]);
                         break;
-                    // TODO:  ExtendedOpcode.Stloc
+                        // TODO:  ExtendedOpcode.Stloc
                 }
 
                 // 2) Determine the result type for values to push into stack
                 TempOperand tod = null;
-                if (output != null) 
+                if (output != null)
                 {
                     tod = new TempOperand(this, output.Type);
                 }
                 else
                 {
                     ClrType? ctyp = OpResultTypeLookup.Query(opcode, extOpCode, exprOdTypes);
-                    if (ctyp.HasValue) 
+                    if (ctyp.HasValue)
                     {
                         tod = new TempOperand(this, (ClrType)ctyp);
                     }
                 }
 
                 // 3) Push result
-				PushBehavior pushbhv = iter.PushBehavior;
-                switch(pushbhv)
+                PushBehavior pushbhv = iter.PushBehavior;
+                switch (pushbhv)
                 {
                     case PushBehavior.Push0:
                         break;
@@ -242,14 +345,16 @@ namespace Mono.Compiler.BigStep
                     case PushBehavior.Pushi8:
                     case PushBehavior.Pushr4:
                     case PushBehavior.Pushr8:
-                        if (tod == null) {
+                        if (tod == null)
+                        {
                             throw new Exception("Unexpected: no value to push to stack.");
                         }
                         stack.Push(tod);
                         break;
                     case PushBehavior.Push1_push1:
                         // This only applies to Opcode.Dup
-                        if (tod == null) {
+                        if (tod == null)
+                        {
                             throw new Exception("Unexpected: no value to push to stack.");
                         }
                         stack.Push(tod);
@@ -261,15 +366,19 @@ namespace Mono.Compiler.BigStep
                 }
 
                 // 4) Send the info to operation processor
+                bool isJumpTarget = targetIndices.ContainsKey(iter.Index);
                 OperationInfo opInfo = new OperationInfo
                 {
+                    Index = index,
                     Operation = opcode,
                     ExtOperation = extOpCode,
                     Operands = operands.ToArray(),
-                    Result = tod
+                    Result = tod,
+                    JumpTarget = isJumpTarget
                 };
                 processor.Process(opInfo);
-			}
+                index++;
+            }
         }
     }
 }
