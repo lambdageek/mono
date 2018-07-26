@@ -141,7 +141,7 @@ static GPtrArray *profile_options;
 static GSList *tramp_infos;
 GSList *mono_interp_only_classes;
 
-static void register_icalls (void);
+static void mini_runtime_register_icalls (void);
 
 gboolean
 mono_running_on_valgrind (void)
@@ -4418,7 +4418,8 @@ mini_init (const char *filename, const char *runtime_version)
 
 	mono_arch_register_lowlevel_calls ();
 
-	register_icalls ();
+	mini_runtime_register_icalls ();
+	mini_jit_register_icalls ();
 
 	mini_jit_register_icalls ();
 
@@ -4631,7 +4632,7 @@ ves_icall_mjit_execute_installed_method (InstalledRuntimeCode *irc, MonoArray *a
 }
 
 static void
-register_icalls (void)
+mini_runtime_register_icalls (void)
 {
 	mono_add_internal_call ("System.Diagnostics.StackFrame::get_frame_info",
 				ves_icall_get_frame_info);
