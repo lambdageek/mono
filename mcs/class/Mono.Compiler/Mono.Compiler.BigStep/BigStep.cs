@@ -38,11 +38,11 @@ namespace Mono.Compiler.BigStep
 			result = NativeCodeHandle.Invalid;
 			try
 			{
-				BitCodeEmitter processor = new BitCodeEmitter(methodInfo){
+				BitCodeEmitter processor = new BitCodeEmitter (RuntimeInfo, methodInfo) {
 					// PrintDebugInfo = true,
 					VerifyGeneratedCode = true
 				};
-				CILSymbolicExecutor exec = new CILSymbolicExecutor(processor, RuntimeInfo, methodInfo);
+				CILSymbolicExecutor exec = new CILSymbolicExecutor (processor, RuntimeInfo, methodInfo);
 				exec.Execute();
 				result = processor.Yield();
 				return CompilationResult.Ok;

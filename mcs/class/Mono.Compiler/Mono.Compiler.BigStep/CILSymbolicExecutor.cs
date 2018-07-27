@@ -19,6 +19,7 @@ namespace Mono.Compiler.BigStep {
 	public class CILSymbolicExecutor : INameGenerator {
 		private IOperationProcessor processor;
 		private IRuntimeInformation runtime;
+		private MethodInfo methodInfo;
 		private MethodBody body;
 
 		private Stack<TempOperand> stack;
@@ -40,6 +41,7 @@ namespace Mono.Compiler.BigStep {
 		{
 			this.processor = processor;
 			this.runtime = runtime;
+			this.methodInfo = methodInfo;
 			this.body = methodInfo.Body;
 
 			this.stack = new Stack<TempOperand>();
@@ -309,6 +311,12 @@ namespace Mono.Compiler.BigStep {
 						operands.Add (locals[opParam]);
 						break;
 						// TODO:  ExtendedOpcode.Stloc
+					case Opcode.Ldsfld:
+						int token = iter.DecodeParamI ();
+						FieldInfo fieldInfo = runtime.GetFieldInfoForToken (methodInfo, token);
+						operands.Add (new Int32ConstOperand (token));
+						output = new TempOperand (this, runtime.Int32Type); /* FIXME: look up the field info! */
+						break;
 				}
 
 				// 2) Determine the result type for values to push into stack

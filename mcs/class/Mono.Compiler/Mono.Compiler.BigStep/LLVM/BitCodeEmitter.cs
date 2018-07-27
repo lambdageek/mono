@@ -32,8 +32,13 @@ namespace Mono.Compiler.BigStep.LLVMBackend {
 		public bool PrintDebugInfo { get; set; }
 		public bool VerifyGeneratedCode { get; set; }
 
-		public BitCodeEmitter (MethodInfo method)
+		internal MethodInfo MethodInfo { get; }
+		internal IRuntimeInformation RuntimeInfo { get; }
+
+		public BitCodeEmitter (IRuntimeInformation runtimeInfo, MethodInfo method)
 		{
+			RuntimeInfo = runtimeInfo;
+			MethodInfo = method;
 			int seq = Interlocked.Increment (ref s_moduleSeq);
 			string modName = "llvmmodule_" + seq;
 			module = LLVM.ModuleCreateWithName(modName);
@@ -197,6 +202,22 @@ namespace Mono.Compiler.BigStep.LLVMBackend {
 					InvokeOperation (op, exop, operands,
 							 vm => {
 								 LLVMValueRef tmp = LLVM.BuildLoad (builder, vm.Address0, tempName);
+								 return new NamedTempValue (tmp, tempName);
+							 });
+					break;
+				case Opcode.Ldsfld:
+					// const => tmp
+					int token = (operands[0] as Int32ConstOperand).Value;
+					InvokeOperation (op, exop, operands,
+							 vm => {
+								 // TODO: It would be nice if operand[0] just carried the fieldInfo here
+								 FieldInfo fieldInfo = RuntimeInfo.GetFieldInfoForToken (MethodInfo, token);
+
+								 LLVMValueRef fieldAddress = GetConstValue (RuntimeInfo.ComputeFieldAddress (fieldInfo));
+
+								 LLVMTypeRef fieldType = LLVM.Int32Type (); /* FIXME: get from field info */
+								 LLVMValueRef address = LLVM.ConstIntToPtr (fieldAddress, LLVM.PointerType (fieldType, 0));
+								 LLVMValueRef tmp = LLVM.BuildLoad (builder, address, tempName);
 								 return new NamedTempValue (tmp, tempName);
 							 });
 					break;
@@ -456,6 +477,11 @@ namespace Mono.Compiler.BigStep.LLVMBackend {
 			throw new Exception ("Unexpected. The const operand is tno recognized.");
 		}
 
+		private LLVMValueRef GetConstValue (IntPtr constant)
+		{
+			return LLVM.ConstInt (TranslateType (RuntimeInformation.NativeIntType), (ulong)constant, true);
+		}
+
 		private static LLVMTypeRef TranslateType (ClrType ctyp)
 		{
 			if (ctyp == RuntimeInformation.BoolType) {
@@ -480,6 +506,7 @@ namespace Mono.Compiler.BigStep.LLVMBackend {
 				return LLVM.FloatType ();
 			}
 			if (ctyp == RuntimeInformation.NativeIntType || ctyp == RuntimeInformation.NativeUnsignedIntType) {
+				/* FIXME: target platform dependent */
 				return LLVM.Int64Type ();
 			}
 			if (ctyp == RuntimeInformation.StringType) {
