@@ -32,8 +32,9 @@ namespace Mono.Compiler.BigStep.LLVMBackend
         private Dictionary<string, LLVMBasicBlockRef> bbs;
 
         public bool PrintDebugInfo { get; set; }
+        public bool VerifyGeneratedCode { get; set; }
 
-        public BitCodeEmitter(IRuntimeInformation runtimeInfo, MethodInfo method)
+        public BitCodeEmitter(MethodInfo method)
         {
             int seq = Interlocked.Increment(ref s_moduleSeq);
             string modName = "llvmmodule_" + seq;
@@ -48,6 +49,7 @@ namespace Mono.Compiler.BigStep.LLVMBackend
             foreach (ParameterInfo pinfo in prms)
             {
                 largs[i] = TranslateType(pinfo.ParameterType);
+                i++;
             }
             LLVMTypeRef rtyp = TranslateType(method.ReturnType);
 
@@ -119,7 +121,20 @@ namespace Mono.Compiler.BigStep.LLVMBackend
             Opcode op = opInfo.Operation;
             ExtendedOpcode? exop = opInfo.ExtOperation;
             IOperand[] operands = opInfo.Operands;
-            TempOperand result = opInfo.Result;
+
+            // The result is the value pushed onto the stack by CLR at the end of instruction.
+            // In the translation we treat each new frame on the stack as a distinct instance
+            // that corresponds to a register in LLVM. If a frame is popped and pushed again it
+            // becomes a new instance. 
+            //
+            // CLR eval-stack frame = TempOperand = LLVM temp register
+            //
+            // If the result is non-null, we must generate a new temp value and associate it
+            // with the temp operand's name. When a temp operand appears in the operands, it 
+            // means a previously pushed value is being consumed by instruction. Based on the 
+            // name of the operand we can  retrieve the temp register and use that in LLVM 
+            // operation.
+            string tempName = opInfo.Result?.Name;
 
             switch (op)
             {
@@ -133,7 +148,14 @@ namespace Mono.Compiler.BigStep.LLVMBackend
                         op, exop, operands,
                         vm =>
                         {
-                            LLVM.BuildRet(builder, vm.Temp0);
+							if (operands.Length > 0)
+							{
+                            	LLVM.BuildRet(builder, vm.Temp0);
+							}
+							else 
+							{
+								LLVM.BuildRetVoid(builder);
+							}
                         });
                     break;
                 case Opcode.Ldarg0:
@@ -143,11 +165,11 @@ namespace Mono.Compiler.BigStep.LLVMBackend
                 case Opcode.LdargS:
                     // arg => tmp
                     InvokeOperation(
-                        op, exop, operands, result,
+                        op, exop, operands,
                         vm =>
                         {
-                            LLVMValueRef tmp = LLVM.BuildLoad(builder, vm.Address0, result.Name);
-                            return new NamedTempValue(tmp, result.Name);
+                            LLVMValueRef tmp = LLVM.BuildLoad(builder, vm.Address0, tempName);
+                            return new NamedTempValue(tmp, tempName);
                         });
                     break;
                 case Opcode.Stloc0:
@@ -176,11 +198,15 @@ namespace Mono.Compiler.BigStep.LLVMBackend
                 case Opcode.LdcI4S:
                     // const => tmp
                     InvokeOperation(
-                        op, exop, operands, result,
+                        op, exop, operands,
                         vm =>
                         {
-                            LLVMValueRef tmp = LLVM.BuildLoad(builder, vm.Const0, result.Name);
-                            return new NamedTempValue(tmp, result.Name);
+							// LLVM doesn't allow assignment from constant to value.
+							// So we just pretend that the constant is a temp value. 
+							// When it's used in an instruction it will be realized 
+							// in the form of "ty value-literal" (e.g. "i32 42")
+                            LLVMValueRef tmp = vm.Const0;
+                            return new NamedTempValue(tmp, tempName);
                         });
                     break;
                 case Opcode.Ldloc0:
@@ -190,57 +216,57 @@ namespace Mono.Compiler.BigStep.LLVMBackend
                 case Opcode.LdlocS:
                     // local => tmp
                     InvokeOperation(
-                        op, exop, operands, result,
+                        op, exop, operands,
                         vm =>
                         {
-                            LLVMValueRef tmp = LLVM.BuildLoad(builder, vm.Address0, result.Name);
-                            return new NamedTempValue(tmp, result.Name);
+                            LLVMValueRef tmp = LLVM.BuildLoad(builder, vm.Address0, tempName);
+                            return new NamedTempValue(tmp, tempName);
                         });
                     break;
                 case Opcode.Add:
                 case Opcode.AddOvf: // TODO - Handle overflow
                 case Opcode.AddOvfUn: // TODO - Handle overflow, unsigned
-                                      // tmp, tmp => tmp
+                    // tmp, tmp => tmp
                     InvokeOperation(
-                        op, exop, operands, result,
+                        op, exop, operands,
                         vm =>
                         {
-                            LLVMValueRef tmp = LLVM.BuildAdd(builder, vm.Temp0, vm.Temp1, result.Name);
-                            return new NamedTempValue(tmp, result.Name);
+                            LLVMValueRef tmp = LLVM.BuildAdd(builder, vm.Temp0, vm.Temp1, tempName);
+                            return new NamedTempValue(tmp, tempName);
                         });
                     break;
                 case Opcode.Sub:
                 case Opcode.SubOvf: // TODO - Handle overflow
                 case Opcode.SubOvfUn: // TODO - Handle overflow, unsigned
-                                      // tmp, tmp => tmp
+                    // tmp, tmp => tmp
                     InvokeOperation(
-                        op, exop, operands, result,
+                        op, exop, operands,
                         vm =>
                         {
-                            LLVMValueRef tmp = LLVM.BuildSub(builder, vm.Temp0, vm.Temp1, result.Name);
-                            return new NamedTempValue(tmp, result.Name);
+                            LLVMValueRef tmp = LLVM.BuildSub(builder, vm.Temp0, vm.Temp1, tempName);
+                            return new NamedTempValue(tmp, tempName);
                         });
                     break;
                 case Opcode.Mul:
                 case Opcode.MulOvf: // TODO - Handle overflow
                 case Opcode.MulOvfUn: // TODO - Handle overflow, unsigned
-                                      // tmp, tmp => tmp
+                    // tmp, tmp => tmp
                     InvokeOperation(
-                        op, exop, operands, result,
+                        op, exop, operands,
                         vm =>
                         {
-                            LLVMValueRef tmp = LLVM.BuildMul(builder, vm.Temp0, vm.Temp1, result.Name);
-                            return new NamedTempValue(tmp, result.Name);
+                            LLVMValueRef tmp = LLVM.BuildMul(builder, vm.Temp0, vm.Temp1, tempName);
+                            return new NamedTempValue(tmp, tempName);
                         });
                     break;
                 case Opcode.Div:
                     // tmp, tmp => tmp
                     InvokeOperation(
-                        op, exop, operands, result,
+                        op, exop, operands,
                         vm =>
                         {
-                            LLVMValueRef tmp = LLVM.BuildFDiv(builder, vm.Temp0, vm.Temp1, result.Name);
-                            return new NamedTempValue(tmp, result.Name);
+                            LLVMValueRef tmp = LLVM.BuildFDiv(builder, vm.Temp0, vm.Temp1, tempName);
+                            return new NamedTempValue(tmp, tempName);
                         });
                     break;
                 case Opcode.Br:
@@ -252,11 +278,11 @@ namespace Mono.Compiler.BigStep.LLVMBackend
                 case Opcode.DivUn:
                     // tmp, tmp => tmp
                     InvokeOperation(
-                        op, exop, operands, result,
+                        op, exop, operands,
                         vm =>
                         {
-                            LLVMValueRef tmp = LLVM.BuildUDiv(builder, vm.Temp0, vm.Temp1, result.Name);
-                            return new NamedTempValue(tmp, result.Name);
+                            LLVMValueRef tmp = LLVM.BuildUDiv(builder, vm.Temp0, vm.Temp1, tempName);
+                            return new NamedTempValue(tmp, tempName);
                         });
                     break;
             }
@@ -285,18 +311,29 @@ namespace Mono.Compiler.BigStep.LLVMBackend
                         LLVM.InitializeMCJITCompilerOptions(s_options);
 
                         BitCodeEmitter.s_uninitialized = true;
+						//Console.WriteLine("[DEBUG] LLVM initialized.");
                     }
                 }
             }
 
             try
             {
-                if (LLVM.CreateMCJITCompilerForModule(out LLVMExecutionEngineRef engine, module, s_options, out var error) != Success)
+				if (VerifyGeneratedCode)
+				{
+					if (LLVM.VerifyFunction(
+						function, LLVMVerifierFailureAction.LLVMPrintMessageAction) != Success)
+					{
+                    	throw new Exception($"Couldn't verify the generated code. There is likely due to bug in code generation.");
+					}
+				}
+
+                if (LLVM.CreateMCJITCompilerForModule(
+					out LLVMExecutionEngineRef engine, module, s_options, out var error) != Success)
                 {
                     throw new Exception($"Compilation by LLVM failed: { error }");
                 }
+				//Console.WriteLine("[DEBUG] LLVM compilation succeeded.");
                 IntPtr fnptr = LLVM.GetPointerToGlobal(engine, function);
-                LLVM.DisposeExecutionEngine(engine); // Safe to dispose of this?
                 unsafe
                 {
                     return new NativeCodeHandle((byte*)fnptr, -1);
@@ -389,21 +426,25 @@ namespace Mono.Compiler.BigStep.LLVMBackend
             Opcode op,
             ExtendedOpcode? exop,
             IOperand[] operands,
-            TempOperand result,
             Func<ValueMappings, NamedTempValue> emitFunc)
         {
-            ValueMappings mappings = new ValueMappings(operands.Length + (result == null ? 0 : 1));
+			if (this.PrintDebugInfo)
+			{
+				string opstr = $"[DEBUG] {op.ToString()} - ";
+				foreach (IOperand od in operands)
+				{
+					opstr += od.Name;
+					opstr += " ";
+				}
+				Console.WriteLine(opstr);
+			}
+
+            ValueMappings mappings = new ValueMappings(operands.Length);
             StorageTypedValue[] stvalues = mappings.Values;
-            int i = 0;
-            for (; i < operands.Length; i++)
+            for (int i = 0; i < operands.Length; i++)
             {
                 IOperand operand = operands[i];
                 stvalues[i] = MakeStorageTypedValue(operand);
-            }
-
-            if (result != null)
-            {
-                stvalues[i] = MakeStorageTypedValue(result);
             }
 
             NamedTempValue ntv = emitFunc(mappings);
@@ -430,7 +471,6 @@ namespace Mono.Compiler.BigStep.LLVMBackend
                 op,
                 exop,
                 operands,
-                null,
                 (vm) =>
                 {
                     emitFunc(vm);
@@ -490,6 +530,7 @@ namespace Mono.Compiler.BigStep.LLVMBackend
         private LLVMValueRef GetTempValue(IOperand operand)
         {
             TempOperand tod = (TempOperand)operand;
+            string name = tod.Name;
             return temps[tod.Name];
         }
 
@@ -530,7 +571,7 @@ namespace Mono.Compiler.BigStep.LLVMBackend
             {
                 return LLVM.Int16Type();
             }
-            if (ctyp == RuntimeInformation.Int32Type || ctyp == RuntimeInformation.UInt16Type)
+            if (ctyp == RuntimeInformation.Int32TypeInstance || ctyp == RuntimeInformation.UInt16Type)
             {
                 return LLVM.Int32Type();
             }

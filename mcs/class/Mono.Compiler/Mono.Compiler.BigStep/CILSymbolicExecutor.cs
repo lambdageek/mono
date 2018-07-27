@@ -273,7 +273,26 @@ namespace Mono.Compiler.BigStep
                         popCount = stack.Count;
                         break;
                     case PopBehavior.Varpop:
-                        throw new Exception("TODO: Cannot handle PopBehavior.Varpop yet.");
+                        if (opcode == Opcode.Ret)
+                        {
+                            if (stack.Count == 0) 
+                            {
+                                break;
+                            }
+                            else if (stack.Count == 1) 
+                            {
+                                popCount = 1;
+                                break;
+                            }
+                            else if (stack.Count > 1) 
+                            {
+                                // Likely a bug somewhere else in the symbolic engine.
+                                throw new Exception($"Unexpected. Leaves function with non-empty stack.");
+                            } 
+                        }
+
+                        throw new Exception(
+                            $"TODO: Cannot handle PopBehavior.Varpop against { opcode } yet.");
                 }
 
                 int count = popCount;

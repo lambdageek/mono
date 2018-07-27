@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 
 using Mono.Compiler;
+using Mono.Compiler.BigStep.LLVMBackend;
 using SimpleJit.Metadata;
 using SimpleJit.CIL;
 
@@ -31,6 +32,29 @@ namespace Mono.Compiler.BigStep
 		}
 
 		public CompilationResult CompileMethod (MethodInfo methodInfo, out NativeCodeHandle result)
+		{
+			// return CompileMethodOld(methodInfo, result);
+			
+			result = NativeCodeHandle.Invalid;
+			try
+			{
+				BitCodeEmitter processor = new BitCodeEmitter(methodInfo){
+					// PrintDebugInfo = true,
+					VerifyGeneratedCode = true
+				};
+				CILSymbolicExecutor exec = new CILSymbolicExecutor(processor, RuntimeInfo, methodInfo);
+				exec.Execute();
+				result = processor.Yield();
+				return CompilationResult.Ok;
+			}
+			catch (Exception ex)
+			{
+				Console.Error.WriteLine(ex);
+				return CompilationResult.InternalError;
+			}
+		}
+
+		private CompilationResult CompileMethodOld (MethodInfo methodInfo, out NativeCodeHandle result)
 		{
 			var builder = new Builder ();
 			var env = new Env (RuntimeInfo, methodInfo);
