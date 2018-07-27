@@ -302,15 +302,9 @@ namespace Mono.Compiler.BigStep.LLVMBackend
                 {
                     if (!BitCodeEmitter.s_initialized)
                     {
-                        LLVM.LinkInMCJIT();
-                        LLVM.InitializeX86TargetMC();
-                        LLVM.InitializeX86Target();
-                        LLVM.InitializeX86TargetInfo();
-                        LLVM.InitializeX86AsmParser();
-                        LLVM.InitializeX86AsmPrinter();
-                        LLVM.InitializeMCJITCompilerOptions(s_options);
+			    BigStep.InitializeLLVM_OSX_AMD64 (s_options);
 
-                        BitCodeEmitter.s_uninitialized = true;
+                        BitCodeEmitter.s_initialized = true;
 						//Console.WriteLine("[DEBUG] LLVM initialized.");
                     }
                 }

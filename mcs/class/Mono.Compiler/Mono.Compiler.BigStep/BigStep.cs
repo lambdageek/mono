@@ -69,6 +69,31 @@ namespace Mono.Compiler.BigStep
 			return r;
 		}
 
+		internal static void InitializeLLVM_OSX_AMD64 (LLVMMCJITCompilerOptions mcjitCompilerOptions)
+		{
+			LLVM.LinkInMCJIT ();
+			LLVM.InitializeX86TargetMC ();
+			LLVM.InitializeX86Target ();
+			LLVM.InitializeX86TargetInfo ();
+			LLVM.InitializeX86AsmParser ();
+			LLVM.InitializeX86AsmPrinter ();
+			LLVM.InitializeX86Disassembler ();
+
+			/* this looks like unused code, but it initializes the target configuration */
+			LLVMTargetRef target = LLVM.GetTargetFromName("x86-64");
+			LLVMTargetMachineRef tmachine = LLVM.CreateTargetMachine(
+						target,
+						TargetTriple,
+						"x86-64",  // processor
+						"",  // feature
+						LLVMCodeGenOptLevel.LLVMCodeGenLevelNone,
+						LLVMRelocMode.LLVMRelocDefault,
+						LLVMCodeModel.LLVMCodeModelDefault);
+			/* </side effect code> */
+
+			LLVM.InitializeMCJITCompilerOptions(mcjitCompilerOptions);
+		}
+
 		// translation environment for a single function
 		class Env {
 			private ArgStack currentStack;
@@ -168,29 +193,10 @@ namespace Mono.Compiler.BigStep
 				// FIXME: get rid of this printf
 				LLVM.DumpModule (Module);
 
-				//FIXME: do this once
-				LLVM.LinkInMCJIT ();
-				LLVM.InitializeX86TargetMC ();
-				LLVM.InitializeX86Target ();
-				LLVM.InitializeX86TargetInfo ();
-				LLVM.InitializeX86AsmParser ();
-				LLVM.InitializeX86AsmPrinter ();
-				LLVM.InitializeX86Disassembler ();
-
-				/* this looks like unused code, but it initializes the target configuration */
-				LLVMTargetRef target = LLVM.GetTargetFromName("x86-64");
-				LLVMTargetMachineRef tmachine = LLVM.CreateTargetMachine(
-						target,
-						TargetTriple,
-						"x86-64",  // processor
-						"",  // feature
-						LLVMCodeGenOptLevel.LLVMCodeGenLevelNone,
-						LLVMRelocMode.LLVMRelocDefault,
-						LLVMCodeModel.LLVMCodeModelDefault);
-				/* </side effect code> */
-
 				LLVMMCJITCompilerOptions options = new LLVMMCJITCompilerOptions { NoFramePointerElim = 0 };
-				LLVM.InitializeMCJITCompilerOptions(options);
+
+				BigStep.InitializeLLVM_OSX_AMD64 (options);
+
 				if (LLVM.CreateMCJITCompilerForModule(out var engine, Module, options, out var error) != Success)
 				{
 					/* FIXME: If I make completely bogus LLVM IR, I would expect to
