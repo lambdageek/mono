@@ -40,9 +40,9 @@ namespace Mono.Compiler {
 		}
 
 		[MethodImplAttribute(MethodImplOptions.InternalCall)]
-		static extern Int64 ComputeStaticFieldAddress (RuntimeFieldHandle handle);
+		static extern IntPtr ComputeStaticFieldAddress (RuntimeFieldHandle handle);
 
-		public Int64 ComputeFieldAddress (FieldInfo fi) {
+		public IntPtr ComputeFieldAddress (FieldInfo fi) {
 			if (!fi.IsStatic)
 				throw new InvalidOperationException ("field isn't static");
 			return ComputeStaticFieldAddress (fi.srFieldInfo.FieldHandle);

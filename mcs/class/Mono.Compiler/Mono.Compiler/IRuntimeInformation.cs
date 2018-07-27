@@ -16,7 +16,7 @@ namespace Mono.Compiler
 
 		FieldInfo GetFieldInfoForToken (MethodInfo mi, int token);
 
-		Int64 ComputeFieldAddress (FieldInfo fi);
+		IntPtr ComputeFieldAddress (FieldInfo fi);
 
 		ClrType VoidType { get; }
 

@@ -5694,7 +5694,7 @@ ves_icall_Mono_Compiler_RuntimeInformation_GetSRFieldInfoForToken (MonoMethod *m
 	return mono_field_get_object_handle (mono_domain_get (), field->parent, field, error);
 }
 
-ICALL_EXPORT guint64
+ICALL_EXPORT gpointer
 ves_icall_Mono_Compiler_RuntimeInformation_ComputeStaticFieldAddress (MonoClassField *field)
 {
 	// TODO: check mono_class_static_field_address in jit-icalls.c
@@ -5704,7 +5704,7 @@ ves_icall_Mono_Compiler_RuntimeInformation_ComputeStaticFieldAddress (MonoClassF
 	mono_class_init (field->parent);
 	MonoVTable *vtable = mono_class_vtable_checked (domain, field->parent, error);
 
-	guint64 addr = (guint64) ((char *) mono_vtable_get_static_field_data (vtable) + field->offset);
+	gpointer addr = ((char *) mono_vtable_get_static_field_data (vtable) + field->offset);
 	// g_print ("the address: %p, value: %p\n", addr, *(guint64 *) addr);
 	return addr;
 }
