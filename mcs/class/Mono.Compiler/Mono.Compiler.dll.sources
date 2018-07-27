@@ -13,8 +13,6 @@ Mono.Compiler/NativeCodeHandle.cs
 Mono.Compiler/RuntimeInformation.cs
 
 Mono.Compiler.BigStep/BigStep.cs
-Mono.Compiler.BigStep/BSType.cs
-Mono.Compiler.BigStep/ArgStack.cs
 
 Mono.Compiler.BigStep/CILSymbolicExecutor.cs
 Mono.Compiler.BigStep/OpResultTypeLookup.cs
