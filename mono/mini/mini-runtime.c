@@ -4511,14 +4511,23 @@ mjit_initialize (void)
 }
 
 static gpointer
-compile_method_inner (MonoMethod *method, MonoDomain *target_domain, gint32 opt, MonoError *error)
+mjit_compile_method_inner (MonoMethod *method, MonoDomain *target_domain, gint32 opt, MonoError *error)
 {
-	if (!g_hasenv("MONO_MJIT"))
-		return mono_jit_compile_method_inner (method, target_domain, opt, NULL, error);
-
+	static __thread gboolean is_mjit_compiling = FALSE;
 	MonoObject *compiler, *method_info, *ret;
 	MonoNativeCodeHandle native_code;
 	gpointer params[4];
+	gboolean bootstrapping;
+
+	bootstrapping = is_mjit_compiling;
+
+	// g_printerr("%s: method = %s%s%s:%s (%p), bootstrapping = %s\n",
+	// 	__func__, (m_class_get_name_space(method->klass) && m_class_get_name_space(method->klass)[0] != '\0') ? m_class_get_name_space(method->klass) : "",
+	// 		(m_class_get_name_space(method->klass) && m_class_get_name_space(method->klass)[0] != '\0') ? "." : "", m_class_get_name (method->klass), method->name, method,
+	// 			bootstrapping ? "TRUE" : "FALSE");
+
+	if (!bootstrapping)
+		is_mjit_compiling = TRUE;
 
 	mono_lazy_initialize (&mjit_initialized, mjit_initialize);
 
@@ -4528,7 +4537,12 @@ compile_method_inner (MonoMethod *method, MonoDomain *target_domain, gint32 opt,
 
 	/* Invoke methodInfo..ctor */
 	params [0] = &method;
-	mono_runtime_invoke_interpreter (MethodInfo_ctor_method, method_info, params, error);
+
+	if (bootstrapping)
+		mono_runtime_invoke_interpreter (MethodInfo_ctor_method, method_info, params, error);
+	else
+		mono_runtime_invoke_checked (MethodInfo_ctor_method, method_info, params, error);
+
 	return_val_if_nok (error, NULL);
 
 	/* Create compiler object */
@@ -4540,8 +4554,16 @@ compile_method_inner (MonoMethod *method, MonoDomain *target_domain, gint32 opt,
 	params[1] = method_info;
 	params[2] = &opt;
 	params[3] = &native_code;
-	ret = mono_runtime_invoke_interpreter (ICompiler_CompileMethod_method, compiler, params, error);
+
+	if (bootstrapping)
+		ret = mono_runtime_invoke_interpreter (ICompiler_CompileMethod_method, compiler, params, error);
+	else
+		ret = mono_runtime_invoke_checked (ICompiler_CompileMethod_method, compiler, params, error);
+
 	return_val_if_nok (error, NULL);
+
+	if (!bootstrapping)
+		is_mjit_compiling = FALSE;
 
 	if (*(gint16*)mono_object_unbox (ret) != 0 /* CompilationResult.Ok */) {
 		/* set error */
@@ -4549,6 +4571,43 @@ compile_method_inner (MonoMethod *method, MonoDomain *target_domain, gint32 opt,
 	}
 
 	return native_code.blob;
+}
+
+static gpointer
+njit_compile_method_inner (MonoMethod *method, MonoDomain *target_domain, gint32 opt, MonoError *error)
+{
+	return mono_jit_compile_method_inner (method, target_domain, opt, NULL, error);
+}
+
+/*
+ * This function is to be used to call the compiler, and it needs be the single point of entry to the compiler.
+ */
+static gpointer
+compile_method_inner (MonoMethod *method, MonoDomain *target_domain, gint32 opt, MonoError *error)
+{
+	MonoVTable *vtable;
+	gpointer res;
+
+	if (g_hasenv("MONO_MJIT"))
+		res = mjit_compile_method_inner (method, target_domain, opt, error);
+	else
+		res = njit_compile_method_inner (method, target_domain, opt, error);
+
+	if (res == NULL)
+		return NULL;
+
+	vtable = mono_class_vtable_checked (target_domain, method->klass, error);
+	return_val_if_nok (error, NULL);
+
+	if (method->wrapper_type != MONO_WRAPPER_REMOTING_INVOKE
+	     && method->wrapper_type != MONO_WRAPPER_REMOTING_INVOKE_WITH_CHECK
+	     && method->wrapper_type != MONO_WRAPPER_XDOMAIN_INVOKE)
+	{
+		mono_runtime_class_init_full (vtable, error);
+		return_val_if_nok (error, NULL);
+	}
+
+	return res;
 }
 
 typedef struct _InstalledRuntimeCode {

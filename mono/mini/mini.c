@@ -4041,7 +4041,6 @@ mono_jit_compile_method_inner (MonoMethod *method, MonoDomain *target_domain, gi
 	MonoCompile *cfg;
 	gpointer code = NULL;
 	MonoJitInfo *jinfo, *info;
-	MonoVTable *vtable;
 	MonoException *ex = NULL;
 	GTimer *jit_timer;
 	MonoMethod *prof_method, *shared;
@@ -4176,12 +4175,6 @@ mono_jit_compile_method_inner (MonoMethod *method, MonoDomain *target_domain, gi
 		return NULL;
 	}
 
-	vtable = mono_class_vtable_checked (target_domain, method->klass, error);
-	if (!mono_error_ok (error)) {
-		mono_destroy_compile (cfg);
-		return NULL;
-	}
-
 	if (method->wrapper_type == MONO_WRAPPER_MANAGED_TO_NATIVE) {
 		if (mono_marshal_method_from_wrapper (method)) {
 			/* Native func wrappers have no method */
@@ -4193,24 +4186,12 @@ mono_jit_compile_method_inner (MonoMethod *method, MonoDomain *target_domain, gi
 	if (prof_method != method)
 		MONO_PROFILER_RAISE (jit_done, (prof_method, jinfo));
 
-	if (!(method->wrapper_type == MONO_WRAPPER_REMOTING_INVOKE ||
-		  method->wrapper_type == MONO_WRAPPER_REMOTING_INVOKE_WITH_CHECK ||
-		  method->wrapper_type == MONO_WRAPPER_XDOMAIN_INVOKE)) {
-		if (!mono_runtime_class_init_full (vtable, error)) {
-			mono_destroy_compile (cfg);
-			return NULL;
-		}
-	}
-
-	if (!code) {
-		mono_destroy_compile (cfg);
-		return NULL;
-	}
-
 	if (code_length)
 		*code_length = cfg->code_len;
 
 	mono_destroy_compile (cfg);
+
+	g_assert (code);
 	return code;
 }
 
