@@ -39,5 +39,9 @@ namespace SimpleJit.Metadata
 			return !left.Equals (right);
 		}
 
+		public static ClrType MakePointerType (ClrType ty)
+		{
+			return new ClrType (ty.AsSystemType.MakePointerType ().TypeHandle);
+		}
 	}
 }
