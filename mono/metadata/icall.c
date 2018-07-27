@@ -5681,6 +5681,34 @@ ves_icall_Mono_RuntimeMarshal_FreeAssemblyName (MonoAssemblyName *aname, gboolea
 		g_free (aname);
 }
 
+ICALL_EXPORT MonoReflectionFieldHandle
+ves_icall_Mono_Compiler_RuntimeInformation_GetSRFieldInfoForToken (MonoMethod *method, int token, MonoError *error)
+{
+	MonoGenericContext generic_context;
+	MonoClass *klass = NULL;
+	MonoImage *image = m_class_get_image (method->klass);
+
+	MonoClassField *field = mono_field_from_token_checked (image, token, &klass, &generic_context, error);
+	g_assert (field);
+
+	return mono_field_get_object_handle (mono_domain_get (), field->parent, field, error);
+}
+
+ICALL_EXPORT guint64
+ves_icall_Mono_Compiler_RuntimeInformation_ComputeStaticFieldAddress (MonoClassField *field)
+{
+	// TODO: check mono_class_static_field_address in jit-icalls.c
+	ERROR_DECL (error);
+	MonoDomain *domain = mono_domain_get ();
+
+	mono_class_init (field->parent);
+	MonoVTable *vtable = mono_class_vtable_checked (domain, field->parent, error);
+
+	guint64 addr = (guint64) ((char *) mono_vtable_get_static_field_data (vtable) + field->offset);
+	// g_print ("the address: %p, value: %p\n", addr, *(guint64 *) addr);
+	return addr;
+}
+
 ICALL_EXPORT void
 ves_icall_Mono_Runtime_DisableMicrosoftTelemetry (MonoError *error)
 {

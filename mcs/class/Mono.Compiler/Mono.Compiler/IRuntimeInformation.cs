@@ -14,6 +14,10 @@ namespace Mono.Compiler
 
 		MethodInfo GetMethodInfoFor (ClassInfo classInfo, string methodName);
 
+		FieldInfo GetFieldInfoForToken (MethodInfo mi, int token);
+
+		Int64 ComputeFieldAddress (FieldInfo fi);
+
 		ClrType VoidType { get; }
 
 		ClrType Int32Type { get; }

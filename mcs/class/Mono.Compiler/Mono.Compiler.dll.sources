@@ -7,6 +7,7 @@ Mono.Compiler/CompilationResult.cs
 Mono.Compiler/ICompiler.cs
 Mono.Compiler/IRuntimeInformation.cs
 Mono.Compiler/InstalledRuntimeCode.cs
+Mono.Compiler/FieldInfo.cs
 Mono.Compiler/ManagedJIT.cs
 Mono.Compiler/MethodInfo.cs
 Mono.Compiler/NativeCodeHandle.cs

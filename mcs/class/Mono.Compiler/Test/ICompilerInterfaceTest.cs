@@ -38,6 +38,11 @@ namespace MonoTests.Mono.CompilerInterface
 			return a + b + c;
 		}
 
+		public static int staticField = 0x1337;
+		public static int StaticFieldReadMethod () {
+			return staticField;
+		}
+
 		[Test]
 		public void TestAddMethod () {
 			ClassInfo ci = runtimeInfo.GetClassInfoFor (typeof (ICompilerTests).AssemblyQualifiedName);
@@ -183,6 +188,21 @@ namespace MonoTests.Mono.CompilerInterface
 			Assert.IsNotNull (o);
 			Assert.AreEqual (typeof(int), o.GetType ());
 			Assert.AreEqual (42, (int)o);
+		}
+
+		[Test]
+		public unsafe void TestStaticFieldRead () {
+			ClassInfo ci = runtimeInfo.GetClassInfoFor (typeof (ICompilerTests).AssemblyQualifiedName);
+			MethodInfo mi = runtimeInfo.GetMethodInfoFor (ci, "StaticFieldReadMethod");
+
+			NativeCodeHandle nativeCode;
+
+			var result = compiler.CompileMethod (runtimeInfo, mi, CompilationFlags.None, out nativeCode);
+			InstalledRuntimeCode irc = runtimeInfo.InstallCompilationResult (result, mi, nativeCode);
+			var o = runtimeInfo.ExecuteInstalledMethod (irc);
+			Assert.IsNotNull (o);
+			Assert.AreEqual (typeof(int), o.GetType ());
+			Assert.AreEqual (0x1337, (int)o);
 		}
 	}
 }

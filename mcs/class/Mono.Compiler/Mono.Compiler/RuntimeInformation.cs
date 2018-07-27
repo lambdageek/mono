@@ -31,6 +31,23 @@ namespace Mono.Compiler {
 			return classInfo.GetMethodInfoFor (methodName);
 		}
 
+		[MethodImplAttribute(MethodImplOptions.InternalCall)]
+		static extern System.Reflection.FieldInfo GetSRFieldInfoForToken (RuntimeMethodHandle handle, int token);
+
+		public FieldInfo GetFieldInfoForToken (MethodInfo mi, int token) {
+			System.Reflection.FieldInfo srfi = GetSRFieldInfoForToken (mi.RuntimeMethodHandle, token);
+			return new FieldInfo (srfi);
+		}
+
+		[MethodImplAttribute(MethodImplOptions.InternalCall)]
+		static extern Int64 ComputeStaticFieldAddress (RuntimeFieldHandle handle);
+
+		public Int64 ComputeFieldAddress (FieldInfo fi) {
+			if (!fi.IsStatic)
+				throw new InvalidOperationException ("field isn't static");
+			return ComputeStaticFieldAddress (fi.srFieldInfo.FieldHandle);
+		}
+
 		/* Primitive types */
 		public ClrType VoidType { get => ClrTypeFromType (typeof (void)); }
 		public ClrType Int32Type { get => ClrTypeFromType (typeof (System.Int32)); }

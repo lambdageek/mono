@@ -80,6 +80,10 @@ HANDLES(ICALL(NATIVEMETHODS_9, "SetProcessWorkingSetSize", ves_icall_Microsoft_W
 HANDLES(ICALL(NATIVEMETHODS_10, "TerminateProcess", ves_icall_Microsoft_Win32_NativeMethods_TerminateProcess))
 HANDLES(ICALL(NATIVEMETHODS_11, "WaitForInputIdle", ves_icall_Microsoft_Win32_NativeMethods_WaitForInputIdle))
 
+ICALL_TYPE(COMPILERRTINFO, "Mono.Compiler.RuntimeInformation", COMPILERRTINFO_1)
+HANDLES(ICALL(COMPILERRTINFO_1, "ComputeStaticFieldAddress", ves_icall_Mono_Compiler_RuntimeInformation_ComputeStaticFieldAddress))
+HANDLES(ICALL(COMPILERRTINFO_2, "GetSRFieldInfoForToken", ves_icall_Mono_Compiler_RuntimeInformation_GetSRFieldInfoForToken))
+
 #ifndef DISABLE_COM
 ICALL_TYPE(COMPROX, "Mono.Interop.ComInteropProxy", COMPROX_1)
 HANDLES(ICALL(COMPROX_1, "AddProxy", ves_icall_Mono_Interop_ComInteropProxy_AddProxy))
