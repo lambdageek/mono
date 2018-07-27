@@ -97,7 +97,7 @@ namespace Mono.Compiler.BigStep.LLVMBackend {
 			foreach (LocalVariableInfo lvi in locals) {
 				LLVMTypeRef ltyp = TranslateType (lvi.LocalType);
 				LLVMValueRef lref = LLVM.BuildAlloca (builder, ltyp, "L" + i);
-				this.localAddrs[i] = lref;
+				this.localAddrs[i++] = lref;
 			}
 		}
 
