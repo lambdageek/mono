@@ -20,7 +20,7 @@ namespace Mono.Compiler.BigStep.LLVMBackend
         private static readonly LLVMMCJITCompilerOptions s_options = new LLVMMCJITCompilerOptions { NoFramePointerElim = 0 };
 
         private static int s_moduleSeq;
-        private static bool s_uninitialized;
+        private static bool s_initialized;
 
         private LLVMModuleRef module;
         private LLVMBuilderRef builder;
@@ -296,11 +296,11 @@ namespace Mono.Compiler.BigStep.LLVMBackend
                 LLVM.DumpModule(module);
             }
 
-            if (!BitCodeEmitter.s_uninitialized)
+            if (!BitCodeEmitter.s_initialized)
             {
                 lock (typeof(BitCodeEmitter))
                 {
-                    if (!BitCodeEmitter.s_uninitialized)
+                    if (!BitCodeEmitter.s_initialized)
                     {
                         LLVM.LinkInMCJIT();
                         LLVM.InitializeX86TargetMC();
