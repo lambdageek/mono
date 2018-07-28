@@ -43,6 +43,35 @@ namespace MonoTests.Mono.CompilerInterface
 			return staticField;
 		}
 
+                public static int IfElse1 (int a, int b) {
+                        if (a > 10) {
+                                b = a * b;
+                        } else{
+                                b = a + b;
+                        }
+                        
+                        return b;
+		}
+
+		[Test]
+		public void TestIfElse1 () {
+                        InstalledRuntimeCode irc = CompileCode("IfElse1");
+                        int addition = (int) runtimeInfo.ExecuteInstalledMethod (irc, 11, 2);
+			Assert.AreEqual (22, addition);
+                        addition = (int) runtimeInfo.ExecuteInstalledMethod (irc, 5, 2);
+			Assert.AreEqual (7, addition);
+                }
+
+                private InstalledRuntimeCode CompileCode(string methodName) {
+                        ClassInfo ci = runtimeInfo.GetClassInfoFor (typeof (ICompilerTests).AssemblyQualifiedName);
+			MethodInfo mi = runtimeInfo.GetMethodInfoFor (ci, methodName);
+			NativeCodeHandle nativeCode;
+
+			CompilationResult result = compiler.CompileMethod (runtimeInfo, mi, CompilationFlags.None, out nativeCode);
+			InstalledRuntimeCode irc = runtimeInfo.InstallCompilationResult (result, mi, nativeCode);
+                        return irc;
+                }
+                
 		[Test]
 		public void TestAddMethod () {
 			ClassInfo ci = runtimeInfo.GetClassInfoFor (typeof (ICompilerTests).AssemblyQualifiedName);

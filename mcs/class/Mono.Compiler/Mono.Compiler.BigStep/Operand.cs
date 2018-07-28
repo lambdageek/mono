@@ -57,7 +57,7 @@ namespace Mono.Compiler.BigStep {
 		public int PC { get; private set; }
 
 		internal BranchTargetOperand (int pcvalue)
-			: base ("PC", RuntimeInformation.VoidTypeInstance)
+			: base ("PC", RuntimeInformation.VoidType)
 		{
 			PC = pcvalue;
 		}
@@ -102,7 +102,7 @@ namespace Mono.Compiler.BigStep {
 		public int Value { get; private set; }
 
 		internal Int32ConstOperand (int value)
-			: base (RuntimeInformation.Int32TypeInstance)
+			: base (RuntimeInformation.Int32Type)
 		{
 			Value = value;
 		}

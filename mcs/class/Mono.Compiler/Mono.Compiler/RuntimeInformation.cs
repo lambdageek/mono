@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
@@ -48,43 +49,71 @@ namespace Mono.Compiler {
 			return ComputeStaticFieldAddress (fi.srFieldInfo.FieldHandle);
 		}
 
-		/* Primitive types */
-		public ClrType VoidType { get => ClrTypeFromType (typeof (void)); }
-		public ClrType Int32Type { get => ClrTypeFromType (typeof (System.Int32)); }
-		
-		public static ClrType VoidTypeInstance { get => ClrTypeFromType (typeof (void)); }
+		public static ClrType VoidType => commonTypes[(typeof (void)).TypeHandle];
 
-		public static ClrType BoolType { get => ClrTypeFromType (typeof (bool)); }
+		public static ClrType ObjectType => commonTypes[(typeof (object)).TypeHandle];
 
-		public static ClrType CharType { get => ClrTypeFromType (typeof (char)); }
+		public static ClrType StringType => commonTypes[(typeof (string)).TypeHandle];
 
-		public static ClrType ObjectType { get => ClrTypeFromType (typeof (object)); }
+		public static ClrType TypedRefType => commonTypes[(typeof (System.TypedReference)).TypeHandle];
 
-		public static ClrType StringType { get => ClrTypeFromType (typeof (string)); }
+		public static ClrType BoolType => commonTypes[ (typeof (bool)).TypeHandle];
 
-		public static ClrType Int8Type { get => ClrTypeFromType (typeof (System.SByte)); }
-		public static ClrType UInt8Type { get => ClrTypeFromType (typeof (System.Byte)); }
+		public static ClrType CharType => commonTypes[(typeof (char)).TypeHandle];
 
-		public static ClrType Int16Type { get => ClrTypeFromType (typeof (System.Int16)); }
-		public static ClrType UInt16Type { get => ClrTypeFromType (typeof (System.UInt16)); }
+		public static ClrType Int8Type => commonTypes[(typeof (System.SByte)).TypeHandle];
+		public static ClrType UInt8Type => commonTypes[ (typeof (System.Byte)).TypeHandle];
 
-		public static ClrType Int32TypeInstance { get => ClrTypeFromType (typeof (System.Int32)); }
-		public static ClrType UInt32Type { get => ClrTypeFromType (typeof (System.UInt32)); }
+		public static ClrType Int16Type => commonTypes[(typeof (System.Int16)).TypeHandle];
+		public static ClrType UInt16Type => commonTypes[(typeof (System.UInt16)).TypeHandle];
 
-		public static ClrType Int64Type { get => ClrTypeFromType (typeof (System.Int16)); }
-		public static ClrType UInt64Type { get => ClrTypeFromType (typeof (System.UInt16)); }
+		public static ClrType Int32Type => commonTypes[(typeof (System.Int32)).TypeHandle];
+		public static ClrType UInt32Type => commonTypes[(typeof (System.UInt32)).TypeHandle];
 
-		public static ClrType NativeIntType { get => ClrTypeFromType (typeof (System.IntPtr)); }
-		public static ClrType NativeUnsignedIntType { get => ClrTypeFromType (typeof (System.UIntPtr)); }
+		public static ClrType Int64Type => commonTypes[(typeof (System.Int64)).TypeHandle];
+		public static ClrType UInt64Type => commonTypes[(typeof (System.UInt64)).TypeHandle];
 
-		public static ClrType Float32Type { get => ClrTypeFromType (typeof (System.Single)); }
-		public static ClrType Float64Type { get => ClrTypeFromType (typeof (System.Double)); }
+		public static ClrType NativeIntType => commonTypes[(typeof (System.IntPtr)).TypeHandle];
+		public static ClrType NativeUnsignedIntType => commonTypes[(typeof (System.UIntPtr)).TypeHandle];
 
-		public static ClrType TypedRefType { get => ClrTypeFromType (typeof (System.TypedReference)); }
+		public static ClrType Float32Type => commonTypes[(typeof (System.Single)).TypeHandle];
+		public static ClrType Float64Type => commonTypes[(typeof (System.Double)).TypeHandle];
 
-		internal static ClrType ClrTypeFromType (Type t)
-		{
-			return new ClrType (t.TypeHandle);
-		} 
+                private static IDictionary<RuntimeTypeHandle, ClrType> commonTypes;
+
+                static RuntimeInformation ()
+                {
+                        commonTypes = new Dictionary<RuntimeTypeHandle, ClrType>();
+                        commonTypes[(typeof (void)).TypeHandle] = new ClrType ((typeof (void)).TypeHandle);
+                        commonTypes[(typeof (object)).TypeHandle] = new ClrType ((typeof (object)).TypeHandle);
+                        commonTypes[(typeof (string)).TypeHandle] = new ClrType ((typeof (string)).TypeHandle);
+                        commonTypes[(typeof (System.TypedReference)).TypeHandle] = new ClrType ((typeof (System.TypedReference)).TypeHandle);
+                        commonTypes[(typeof (bool)).TypeHandle] = new ClrType ((typeof (bool)).TypeHandle, NumericCatgoery.Int, 1, false);
+                        commonTypes[(typeof (char)).TypeHandle] = new ClrType ((typeof (char)).TypeHandle, NumericCatgoery.Int, 2, false);
+                        commonTypes[(typeof (System.SByte)).TypeHandle] = new ClrType ((typeof (System.SByte)).TypeHandle, NumericCatgoery.Int, 1, true);
+                        commonTypes[(typeof (System.Byte)).TypeHandle] = new ClrType ((typeof (System.Byte)).TypeHandle, NumericCatgoery.Int, 1, false);
+                        commonTypes[(typeof (System.Int16)).TypeHandle] = new ClrType ((typeof (System.Int16)).TypeHandle, NumericCatgoery.Int, 2, true);
+                        commonTypes[(typeof (System.UInt16)).TypeHandle] = new ClrType ((typeof (System.UInt16)).TypeHandle, NumericCatgoery.Int, 2, false);
+                        commonTypes[(typeof (System.Int32)).TypeHandle] = new ClrType ((typeof (System.Int32)).TypeHandle, NumericCatgoery.Int, 4, true);
+                        commonTypes[(typeof (System.UInt32)).TypeHandle] = new ClrType ((typeof (System.UInt32)).TypeHandle, NumericCatgoery.Int, 4, false);
+                        commonTypes[(typeof (System.Int64)).TypeHandle] = new ClrType ((typeof (System.Int64)).TypeHandle, NumericCatgoery.Int, 8, true);
+                        commonTypes[(typeof (System.UInt64)).TypeHandle] = new ClrType ((typeof (System.UInt64)).TypeHandle, NumericCatgoery.Int, 8, false);
+                        commonTypes[(typeof (System.IntPtr)).TypeHandle] = new ClrType ((typeof (System.IntPtr)).TypeHandle, NumericCatgoery.NativeInt, 8, true); // The precesion shouldn't be used.
+                        commonTypes[(typeof (System.UIntPtr)).TypeHandle] = new ClrType ((typeof (System.UIntPtr)).TypeHandle, NumericCatgoery.NativeInt, 8, false); // The precesion shouldn't be used.
+                        commonTypes[(typeof (System.Single)).TypeHandle] = new ClrType ((typeof (System.Single)).TypeHandle, NumericCatgoery.Float, 4, true);
+                        commonTypes[(typeof (System.Double)).TypeHandle] = new ClrType ((typeof (System.Double)).TypeHandle, NumericCatgoery.Float, 8, true);
+                }
+
+                internal static ClrType ClrTypeFromType(Type type)
+                {
+                        RuntimeTypeHandle handle = type.TypeHandle;
+                        if (!commonTypes.TryGetValue(handle, out ClrType typ)) 
+                        {
+                                typ = new ClrType(handle);
+                        }
+
+                        return typ;
+                }
+
 	}
 }

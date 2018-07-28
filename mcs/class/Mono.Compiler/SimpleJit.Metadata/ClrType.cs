@@ -2,12 +2,43 @@ using System;
 
 namespace SimpleJit.Metadata
 {
-	public struct ClrType {
-		private System.RuntimeTypeHandle rttype;
+        public enum NumericCatgoery
+        {
+                NAN,
+                Int,
+                Float,
+                NativeInt
+        }
 
-		internal ClrType (System.RuntimeTypeHandle rttype) {
+	public struct ClrType 
+        {
+		private System.RuntimeTypeHandle rttype;
+                private NumericCatgoery numerical;
+                private int precision;
+                private bool signed;
+
+		internal ClrType (
+                        System.RuntimeTypeHandle rttype,
+                        NumericCatgoery numerical,
+                        int precision,
+                        bool signed) {
 			this.rttype = rttype;
+                        this.numerical = numerical;
+                        this.precision = precision;
+                        this.signed = signed;
 		}
+
+                internal ClrType (System.RuntimeTypeHandle rttype) 
+                        : this (rttype, NumericCatgoery.NAN, 0, false) {
+		}
+
+                /// The numeric category of this type
+                public NumericCatgoery NumCat => numerical;
+
+                /// Undefined if the type is not numerical
+                public int Precision => precision;
+                /// Undefined if the type is not numerical
+                public bool Signed => signed;
 
 		/// Escape hatch, use sparingly
 		public Type AsSystemType { get => Type.GetTypeFromHandle (rttype); }
