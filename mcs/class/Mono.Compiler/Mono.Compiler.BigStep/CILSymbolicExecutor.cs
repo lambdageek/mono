@@ -126,7 +126,6 @@ namespace Mono.Compiler.BigStep {
 				lpIndices.Add (pindex);
 				int lindex = lpIndices.Count - 1;
 				plIndices[pindex] = lindex;
-
                                 // Record a jump target
                                 if (isImplicitTarget)
                                 {
@@ -144,48 +143,48 @@ namespace Mono.Compiler.BigStep {
 
 				switch (opcode) 
                                 {
-                                case Opcode.Br:
-                                case Opcode.BrS:
-                                case Opcode.Brfalse:
-                                case Opcode.BrfalseS:
-                                case Opcode.Brtrue:
-                                case Opcode.BrtrueS:
-                                case Opcode.Beq:
-                                case Opcode.BeqS:
-                                case Opcode.BgeUn:
-                                case Opcode.BgeUnS:
-                                case Opcode.Bgt:
-                                case Opcode.BgtS:
-                                case Opcode.BgtUn:
-                                case Opcode.BgtUnS:
-                                case Opcode.Ble:
-                                case Opcode.BleS:
-                                case Opcode.BleUn:
-                                case Opcode.BleUnS:
-                                case Opcode.Blt:
-                                case Opcode.BltS:
-                                case Opcode.BltUn:
-                                case Opcode.BltUnS:
-                                case Opcode.BneUn:
-                                case Opcode.BneUnS:
-                                        int target = DecodeBranchTarget(iter);
-                                        if (target <= pindex) 
-                                        {
-                                                // CASE I: Jump backward
-                                                // If jumping backward, we already have everything.
-                                                targetIndices[target] = plIndices[target];
-                                        } 
-                                        else 
-                                        {
-                                                // CASE II: Jump forward
-                                                // If jumping forward, we don't know the logic index yet. The value 
-                                                // will be filled later when we reach that instruction.
-                                                targetIndices[target] = -1;
-                                        }
+                                        case Opcode.Br:
+                                        case Opcode.BrS:
+                                        case Opcode.Brfalse:
+                                        case Opcode.BrfalseS:
+                                        case Opcode.Brtrue:
+                                        case Opcode.BrtrueS:
+                                        case Opcode.Beq:
+                                        case Opcode.BeqS:
+                                        case Opcode.BgeUn:
+                                        case Opcode.BgeUnS:
+                                        case Opcode.Bgt:
+                                        case Opcode.BgtS:
+                                        case Opcode.BgtUn:
+                                        case Opcode.BgtUnS:
+                                        case Opcode.Ble:
+                                        case Opcode.BleS:
+                                        case Opcode.BleUn:
+                                        case Opcode.BleUnS:
+                                        case Opcode.Blt:
+                                        case Opcode.BltS:
+                                        case Opcode.BltUn:
+                                        case Opcode.BltUnS:
+                                        case Opcode.BneUn:
+                                        case Opcode.BneUnS:
+                                                int target = DecodeBranchTarget(iter);
+                                                if (target <= pindex) 
+                                                {
+                                                        // CASE I: Jump backward
+                                                        // If jumping backward, we already have everything.
+                                                        targetIndices[target] = plIndices[target];
+                                                } 
+                                                else 
+                                                {
+                                                        // CASE II: Jump forward
+                                                        // If jumping forward, we don't know the logic index yet. The value 
+                                                        // will be filled later when we reach that instruction.
+                                                        targetIndices[target] = -1;
+                                                }
 
-                                        // Since this OP is a brancing, the next OP is an implicit target.
-                                        isImplicitTarget = true;
-                                        break;
+                                                // Since this OP is a brancing, the next OP is an implicit target.
+                                                isImplicitTarget = true;
+                                                break;
 				}
 			}
 		}
@@ -217,131 +216,129 @@ namespace Mono.Compiler.BigStep {
 
 				// 1) Collect operands
 				List<IOperand> operands = new List<IOperand> ();
-				// 1.1) operands not from stack
-				switch (opcode) 
-                                {
-                                // 1.1.1) operands from Arguments
-                                case Opcode.Ldarg0:
-                                        operands.Add (output = args[0]);
-                                        break;
-                                case Opcode.Ldarg1:
-                                        operands.Add (output = args[1]);
-                                        break;
-                                case Opcode.Ldarg2:
-                                        operands.Add (output = args[2]);
-                                        break;
-                                case Opcode.Ldarg3:
-                                        operands.Add (output = args[3]);
-                                        break;
-                                case Opcode.LdargS:
-                                        opParam = iter.DecodeParamI ();
-                                        operands.Add (output = args[opParam]);
-                                        break;
-                                        // 1.1.2) operands from Locals
-                                case Opcode.Ldloc0:
-                                        operands.Add (output = locals[0]);
-                                        break;
-                                case Opcode.Ldloc1:
-                                        operands.Add (output = locals[1]);
-                                        break;
-                                case Opcode.Ldloc2:
-                                        operands.Add (output = locals[2]);
-                                        break;
-                                case Opcode.Ldloc3:
-                                        operands.Add (output = locals[3]);
-                                        break;
-                                case Opcode.LdlocS:
-                                        opParam = iter.DecodeParamI();
-                                        operands.Add (output = locals[opParam]);
-                                        break;
-                                        // 1.1.3) operands from constants
-                                case Opcode.LdcI4_0:
-                                        operands.Add (output = new Int32ConstOperand (0));
-                                        break;
-                                case Opcode.LdcI4_1:
-                                        operands.Add (output = new Int32ConstOperand (1));
-                                        break;
-                                case Opcode.LdcI4_2:
-                                        operands.Add (output = new Int32ConstOperand (2));
-                                        break;
-                                case Opcode.LdcI4_3:
-                                        operands.Add (output = new Int32ConstOperand (3));
-                                        break;
-                                case Opcode.LdcI4_4:
-                                        operands.Add (output = new Int32ConstOperand (4));
-                                        break;
-                                case Opcode.LdcI4_5:
-                                        operands.Add (new Int32ConstOperand (5));
-                                        break;
-                                case Opcode.LdcI4_6:
-                                        operands.Add (output = new Int32ConstOperand (6));
-                                        break;
-                                case Opcode.LdcI4_7:
-                                        operands.Add (output = new Int32ConstOperand (7));
-                                        break;
-                                case Opcode.LdcI4M1:
-                                        operands.Add (output = new Int32ConstOperand (-1));
-                                        break;
-                                case Opcode.LdcI4:
-                                case Opcode.LdcI4S:
-                                        opParam = iter.DecodeParamI();
-                                        operands.Add (output = new Int32ConstOperand (opParam));
-                                        break;
-                                case Opcode.LdcI8:
-                                case Opcode.LdcR4:
-                                case Opcode.LdcR8:
-                                        throw new NotImplementedException ($"TODO: Cannot handle {opcode.ToString()} yet.");
-                                        // TODO:  ExtendedOpcode.Ldloc
+			        // 1.1) operands not from stack
+				switch (opcode) {
+					// 1.1.1) operands from Arguments
+					case Opcode.Ldarg0:
+						operands.Add (output = args[0]);
+						break;
+					case Opcode.Ldarg1:
+						operands.Add (output = args[1]);
+						break;
+					case Opcode.Ldarg2:
+						operands.Add (output = args[2]);
+						break;
+					case Opcode.Ldarg3:
+						operands.Add (output = args[3]);
+						break;
+					case Opcode.LdargS:
+						opParam = iter.DecodeParamI ();
+						operands.Add (output = args[opParam]);
+						break;
+					// 1.1.2) operands from Locals
+					case Opcode.Ldloc0:
+						operands.Add (output = locals[0]);
+						break;
+					case Opcode.Ldloc1:
+						operands.Add (output = locals[1]);
+						break;
+					case Opcode.Ldloc2:
+						operands.Add (output = locals[2]);
+						break;
+					case Opcode.Ldloc3:
+						operands.Add (output = locals[3]);
+						break;
+					case Opcode.LdlocS:
+						opParam = iter.DecodeParamI();
+						operands.Add (output = locals[opParam]);
+						break;
+					// 1.1.3) operands from constants
+					case Opcode.LdcI4_0:
+						operands.Add (output = new Int32ConstOperand (0));
+						break;
+					case Opcode.LdcI4_1:
+						operands.Add (output = new Int32ConstOperand (1));
+						break;
+					case Opcode.LdcI4_2:
+						operands.Add (output = new Int32ConstOperand (2));
+						break;
+					case Opcode.LdcI4_3:
+						operands.Add (output = new Int32ConstOperand (3));
+						break;
+					case Opcode.LdcI4_4:
+						operands.Add (output = new Int32ConstOperand (4));
+						break;
+					case Opcode.LdcI4_5:
+						operands.Add (output = new Int32ConstOperand (5));
+						break;
+					case Opcode.LdcI4_6:
+						operands.Add (output = new Int32ConstOperand(6));
+						break;
+					case Opcode.LdcI4_7:
+						operands.Add (output = new Int32ConstOperand(7));
+						break;
+					case Opcode.LdcI4M1:
+						operands.Add (output = new Int32ConstOperand(-1));
+						break;
+					case Opcode.LdcI4:
+					case Opcode.LdcI4S:
+						opParam = iter.DecodeParamI();
+						operands.Add (output = new Int32ConstOperand(opParam));
+						break;
+					case Opcode.LdcI8:
+					case Opcode.LdcR4:
+					case Opcode.LdcR8:
+						throw new NotImplementedException($"TODO: Cannot handle {opcode.ToString()} yet.");
+                                                // TODO:  ExtendedOpcode.Ldloc
 				}
 
 				// 1.2) operands to be popped from stack
 				PopBehavior popbhv = iter.PopBehavior;
 				int popCount = 0;
-				switch (popbhv) 
-                                {
-                                case PopBehavior.Pop0:
-                                        popCount = 0;
-                                        break;
-                                case PopBehavior.Pop1:
-                                case PopBehavior.Popi:
-                                case PopBehavior.Popref:
-                                        popCount = 1;
-                                        break;
-                                case PopBehavior.Pop1_pop1:
-                                case PopBehavior.Popi_popi:
-                                case PopBehavior.Popi_popi8:
-                                case PopBehavior.Popi_popr4:
-                                case PopBehavior.Popi_popr8:
-                                case PopBehavior.Popref_pop1:
-                                case PopBehavior.Popi_pop1:
-                                case PopBehavior.Popref_popi:
-                                        popCount = 2;
-                                        break;
-                                case PopBehavior.Popi_popi_popi:
-                                case PopBehavior.Popref_popi_popi:
-                                case PopBehavior.Popref_popi_popi8:
-                                case PopBehavior.Popref_popi_popr4:
-                                case PopBehavior.Popref_popi_popr8:
-                                case PopBehavior.Popref_popi_popref:
-                                        popCount = 3;
-                                        break;
-                                case PopBehavior.PopAll:
-                                        popCount = stack.Count;
-                                        break;
-                                case PopBehavior.Varpop:
-                                        if (opcode == Opcode.Ret) {
-                                                if (stack.Count == 0) {
-                                                        break;
-                                                } else if (stack.Count == 1) {
-                                                        popCount = 1;
-                                                        break;
-                                                } else if (stack.Count > 1) {
-                                                        // Likely a bug somewhere else in the symbolic engine.
-                                                        throw new InvalidOperationException ($"Unexpected. Leaves function with non-empty stack.");
-                                                }
-                                        }
+			        switch (popbhv) {
+					case PopBehavior.Pop0:
+						popCount = 0;
+						break;
+					case PopBehavior.Pop1:
+					case PopBehavior.Popi:
+					case PopBehavior.Popref:
+						popCount = 1;
+						break;
+					case PopBehavior.Pop1_pop1:
+					case PopBehavior.Popi_popi:
+					case PopBehavior.Popi_popi8:
+					case PopBehavior.Popi_popr4:
+					case PopBehavior.Popi_popr8:
+					case PopBehavior.Popref_pop1:
+					case PopBehavior.Popi_pop1:
+					case PopBehavior.Popref_popi:
+						popCount = 2;
+						break;
+					case PopBehavior.Popi_popi_popi:
+					case PopBehavior.Popref_popi_popi:
+					case PopBehavior.Popref_popi_popi8:
+					case PopBehavior.Popref_popi_popr4:
+					case PopBehavior.Popref_popi_popr8:
+					case PopBehavior.Popref_popi_popref:
+						popCount = 3;
+						break;
+					case PopBehavior.PopAll:
+						popCount = stack.Count;
+						break;
+					case PopBehavior.Varpop:
+						if (opcode == Opcode.Ret) {
+							if (stack.Count == 0) {
+								break;
+							} else if (stack.Count == 1) {
+								popCount = 1;
+								break;
+							} else if (stack.Count > 1) {
+								// Likely a bug somewhere else in the symbolic engine.
+								throw new InvalidOperationException ($"Unexpected. Leaves function with non-empty stack.");
+							}
+						}
 
-                                        throw new NotImplementedException ($"TODO: Cannot handle PopBehavior.Varpop against { opcode } yet.");
+                                                throw new NotImplementedException ($"TODO: Cannot handle PopBehavior.Varpop against { opcode } yet.");
 				}
 
 				int count = popCount;
@@ -363,75 +360,75 @@ namespace Mono.Compiler.BigStep {
 				// 1.3) results not pushed back to stack, but stored somewhere else (args, locals, etc.)
 				switch (opcode) 
                                 {
-                                case Opcode.Br:
-                                case Opcode.BrS:
-                                case Opcode.Brfalse:
-                                case Opcode.BrfalseS:
-                                case Opcode.Brtrue:
-                                case Opcode.BrtrueS:
-                                case Opcode.Beq:
-                                case Opcode.BeqS:
-                                case Opcode.BgeUn:
-                                case Opcode.BgeUnS:
-                                case Opcode.Bgt:
-                                case Opcode.BgtS:
-                                case Opcode.BgtUn:
-                                case Opcode.BgtUnS:
-                                case Opcode.Ble:
-                                case Opcode.BleS:
-                                case Opcode.BleUn:
-                                case Opcode.BleUnS:
-                                case Opcode.Blt:
-                                case Opcode.BltS:
-                                case Opcode.BltUn:
-                                case Opcode.BltUnS:
-                                case Opcode.BneUn:
-                                case Opcode.BneUnS:
-                                        int target = DecodeBranchTarget (iter);
-                                        int logicIndex = targetIndices[target];
-                                        BranchTargetOperand bto = new BranchTargetOperand (logicIndex);
-                                        operands.Add (bto);
-                                        break;
-                                case Opcode.Stloc0:
-                                        operands.Add (locals[0]);
-                                        break;
-                                case Opcode.Stloc1:
-                                        operands.Add (locals[1]);
-                                        break;
-                                case Opcode.Stloc2:
-                                        operands.Add (locals[2]);
-                                        break;
-                                case Opcode.Stloc3:
-                                        operands.Add (locals[3]);
-                                        break;
-                                case Opcode.StlocS:
-                                        opParam = iter.DecodeParamI ();
-                                        operands.Add (locals[opParam]);
-                                        break;
-                                case Opcode.StargS:
-                                        opParam = iter.DecodeParamI ();
-                                        operands.Add (args[opParam]);
-                                        break;
+				        case Opcode.Br:
+					case Opcode.BrS:
+					case Opcode.Brfalse:
+					case Opcode.BrfalseS:
+					case Opcode.Brtrue:
+					case Opcode.BrtrueS:
+				        case Opcode.Beq:
+				        case Opcode.BeqS:
+				        case Opcode.BgeUn:
+				        case Opcode.BgeUnS:
+				        case Opcode.Bgt:
+				        case Opcode.BgtS:
+				        case Opcode.BgtUn:
+				        case Opcode.BgtUnS:
+				        case Opcode.Ble:
+				        case Opcode.BleS:
+				        case Opcode.BleUn:
+				        case Opcode.BleUnS:
+				        case Opcode.Blt:
+				        case Opcode.BltS:
+				        case Opcode.BltUn:
+				        case Opcode.BltUnS:
+				        case Opcode.BneUn:
+				        case Opcode.BneUnS:
+						int target = DecodeBranchTarget (iter);
+						int logicIndex = targetIndices[target];
+						BranchTargetOperand bto = new BranchTargetOperand (logicIndex);
+						operands.Add (bto);
+						break;
+				        case Opcode.Stloc0:
+						operands.Add (locals[0]);
+						break;
+					case Opcode.Stloc1:
+						operands.Add (locals[1]);
+						break;
+					case Opcode.Stloc2:
+						operands.Add (locals[2]);
+						break;
+					case Opcode.Stloc3:
+						operands.Add (locals[3]);
+						break;
+					case Opcode.StlocS:
+						opParam = iter.DecodeParamI ();
+						operands.Add (locals[opParam]);
+						break;
+					case Opcode.StargS:
+						opParam = iter.DecodeParamI ();
+						operands.Add (args[opParam]);
+						break; 
+				        case Opcode.Ldsfld:
+				                int token = iter.DecodeParamI ();
+				                FieldInfo fieldInfo = runtime.GetFieldInfoForToken (methodInfo, token);
+				                operands.Add (new Int32ConstOperand (token));
+				                output = new TempOperand (this, RuntimeInformation.Int32Type); /* FIXME: look up the field info! */
+				                break;
 				}
 
                                 if (extOpCode.HasValue)
                                 {
                                         switch (extOpCode.Value)
                                         {
-                                        case ExtendedOpcode.Stloc:
-						opParam = iter.DecodeParamI ();
-						operands.Add (locals[opParam]);
-						break;
-					case Opcode.Ldsfld:
-						int token = iter.DecodeParamI ();
-						FieldInfo fieldInfo = runtime.GetFieldInfoForToken (methodInfo, token);
-						operands.Add (new Int32ConstOperand (token));
-						output = new TempOperand (this, runtime.Int32Type); /* FIXME: look up the field info! */
-						break;
-                                        case ExtendedOpcode.Starg:
-						opParam = iter.DecodeParamI ();
-						operands.Add (args[opParam]);
-						break;
+                                                case ExtendedOpcode.Stloc:
+                                                        opParam = iter.DecodeParamI ();
+                                                        operands.Add (locals[opParam]);
+                                                        break;
+                                                case ExtendedOpcode.Starg:
+                                                        opParam = iter.DecodeParamI ();
+                                                        operands.Add (args[opParam]);
+                                                        break;
                                         }
                                 }
 
@@ -452,39 +449,36 @@ namespace Mono.Compiler.BigStep {
 
 				// 3) Push result
 				PushBehavior pushbhv = iter.PushBehavior;
-				switch (pushbhv) 
-                                {
-                                case PushBehavior.Push0:
-                                        if (tod != null) 
-                                        {
-                                                throw new InvalidOperationException (
-                                                        $"Unexpected: a value is generated but should not be pushed to stack. OP: { opcode }");
-                                        }
-                                        break;
-                                case PushBehavior.Push1:
-                                case PushBehavior.Pushi:
-                                case PushBehavior.Pushi8:
-                                case PushBehavior.Pushr4:
-                                case PushBehavior.Pushr8:
-                                        if (tod == null) 
-                                        {
-                                                throw new InvalidOperationException ($"Unexpected: no value to push to stack. OP: { opcode }");
-                                        }
-                                        stack.Push (tod);
-                                        break;
-                                case PushBehavior.Push1_push1:
-                                        // This only applies to Opcode.Dup
-                                        if (tod == null) 
-                                        {
-                                                throw new InvalidOperationException ($"Unexpected: no value to push to stack. OP: { opcode }");
-                                        }
-                                        stack.Push(tod);
-                                        stack.Push(tod);
-                                        break;
-                                case PushBehavior.Varpush:
-                                        // This is a huge TODO. Function call (Opcode.Call/Calli/Callvirt) relies on this behavior.
-                                        throw new NotImplementedException ("TODO: Cannot handle PushBehavior.Varpush yet.");
-				}
+                                switch (pushbhv) {
+					case PushBehavior.Push0:
+                                                if (tod != null) 
+                                                {
+                                                        throw new InvalidOperationException (
+                                                                $"Unexpected: a value is generated but should not be pushed to stack. OP: { opcode }");
+                                                }
+                                                break;
+					case PushBehavior.Push1:
+					case PushBehavior.Pushi:
+					case PushBehavior.Pushi8:
+					case PushBehavior.Pushr4:
+					case PushBehavior.Pushr8:
+						if (tod == null) {
+                                                        throw new InvalidOperationException ($"Unexpected: no value to push to stack. OP: { opcode }");
+						}
+						stack.Push (tod);
+						break;
+					case PushBehavior.Push1_push1:
+						// This only applies to Opcode.Dup
+						if (tod == null) {
+                                                        throw new InvalidOperationException ($"Unexpected: no value to push to stack. OP: { opcode }");
+						}
+						stack.Push(tod);
+						stack.Push(tod);
+						break;
+					case PushBehavior.Varpush:
+						// This is a huge TODO. Function call (Opcode.Call/Calli/Callvirt) relies on this behavior.
+						throw new NotImplementedException ("TODO: Cannot handle PushBehavior.Varpush yet.");
+                                }
 
 				// 4) Send the info to operation processor
 				bool isJumpTarget = targetIndices.ContainsKey(iter.Index);

@@ -116,7 +116,7 @@ namespace SimpleJit.CIL
 		}
 
 		public OpcodeFlags Flags { get { return flags; } }
-		public String Mnemonic { get { return mnemonic; } }
+                public String Mnemonic { get { return mnemonic; } }
 		public Opcode Opcode { get { return (Opcode)opcode; } }
 		public ExtendedOpcode ExtendedOpcode { get { return (ExtendedOpcode)opcode; } }
 		public PopBehavior PopBehavior { get { return pop; } }
@@ -162,11 +162,11 @@ namespace SimpleJit.CIL
 			case OpcodeFlags.NoOperand:
 				throw new Exception ("no param");
 			case OpcodeFlags.OperandSize1:
-				return b [idx];
+				return unchecked((sbyte)(b [idx]));
 			case OpcodeFlags.OperandSize2:
 				return DataConverter.Int16FromLE (b, idx);
 			case OpcodeFlags.OperandSize4:
-			return DataConverter.Int32FromLE (b, idx);
+			        return DataConverter.Int32FromLE (b, idx);
 			case OpcodeFlags.OperandSize8:
 				throw new Exception ("param of size 8");
 			case OpcodeFlags.OperandSwitch:

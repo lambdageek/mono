@@ -38,7 +38,7 @@ namespace Mono.Compiler {
 		public FieldInfo GetFieldInfoForToken (MethodInfo mi, int token) {
 			System.Reflection.FieldInfo srfi = GetSRFieldInfoForToken (mi.RuntimeMethodHandle, token);
 			return new FieldInfo (srfi);
-		}
+		} 
 
 		[MethodImplAttribute(MethodImplOptions.InternalCall)]
 		static extern IntPtr ComputeStaticFieldAddress (RuntimeFieldHandle handle);

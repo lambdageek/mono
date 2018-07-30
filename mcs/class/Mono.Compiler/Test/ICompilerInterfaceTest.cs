@@ -53,6 +53,39 @@ namespace MonoTests.Mono.CompilerInterface
                         return b;
 		}
 
+                public static int ForLoop1 (int unit) {
+                        int result = 0;
+                        for (int i = 0; i <= 5; i++) {
+                                result += unit;
+                        }
+                        
+                        return result;
+		}
+
+                public static int WhileLoop1 (int times, int unit) {
+                        int result = 0;
+                        while (times > 0) {
+                                result += unit;
+                                times--;
+                        }
+                        
+                        return result;
+		}
+
+		[Test]
+		public void TestWhileLoop1 () {
+                        InstalledRuntimeCode irc = CompileCode("WhileLoop1");
+                        int addition = (int) runtimeInfo.ExecuteInstalledMethod (irc, 3, 7);
+			Assert.AreEqual (21, addition);
+                }
+
+		[Test]
+		public void TestForLoop1 () {
+                        InstalledRuntimeCode irc = CompileCode("ForLoop1");
+                        int addition = (int) runtimeInfo.ExecuteInstalledMethod (irc, 3);
+			Assert.AreEqual (18, addition);
+                }
+
 		[Test]
 		public void TestIfElse1 () {
                         InstalledRuntimeCode irc = CompileCode("IfElse1");

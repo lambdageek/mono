@@ -105,26 +105,29 @@ namespace Mono.Compiler.BigStep.LLVMBackend {
 			if (PrintDebugInfo)
 				LLVM.DumpModule (module);
 
-			if (!BitCodeEmitter.s_initialized) {
-				lock (typeof (BitCodeEmitter)) {
-					if (!BitCodeEmitter.s_initialized) {
+			if (!BitCodeEmitter.s_initialized) 
+                        {
+				lock (typeof (BitCodeEmitter)) 
+                                {
+					if (!BitCodeEmitter.s_initialized) 
+                                        {
 						BigStep.InitializeLLVM_OSX_AMD64 (s_options);
 
 						BitCodeEmitter.s_initialized = true;
-						//Console.WriteLine("[DEBUG] LLVM initialized.");
 					}
 				}
 			}
 
 			try {
-				if (VerifyGeneratedCode) {
+				if (VerifyGeneratedCode) 
+                                {
 					if (LLVM.VerifyFunction (function, LLVMVerifierFailureAction.LLVMPrintMessageAction) != Success)
 						throw new Exception ($"Couldn't verify the generated code. There is likely due to bug in code generation.");
 				}
 
 				if (LLVM.CreateMCJITCompilerForModule(out LLVMExecutionEngineRef engine, module, s_options, out var error) != Success)
 					throw new Exception ($"Compilation by LLVM failed: { error }");
-				//Console.WriteLine("[DEBUG] LLVM compilation succeeded.");
+
 				IntPtr fnptr = LLVM.GetPointerToGlobal (engine, function);
 				unsafe {
 					return new NativeCodeHandle((byte*)fnptr, -1);
@@ -331,14 +334,14 @@ namespace Mono.Compiler.BigStep.LLVMBackend {
                         case Opcode.LdcI4S:
                                 // const => tmp
                                 InvokeOperation (op, exop, operands,
-                                                        vm => {
-                                                                // LLVM doesn't allow assignment from constant to value.
-                                                                // So we just pretend that the constant is a temp value.
-                                                                // When it's used in an instruction it will be realized
-                                                                // in the form of "ty value-literal" (e.g. "i32 42")
-                                                                LLVMValueRef tmp = vm.Const0;
-                                                                return new NamedTempValue (tmp, tempName);
-                                                        });
+                                                vm => {
+                                                        // LLVM doesn't allow assignment from constant to value.
+                                                        // So we just pretend that the constant is a temp value.
+                                                        // When it's used in an instruction it will be realized
+                                                        // in the form of "ty value-literal" (e.g. "i32 42")
+                                                        LLVMValueRef tmp = vm.Const0;
+                                                        return new NamedTempValue (tmp, tempName);
+                                                });
                                 break;
                         case Opcode.Ldloc0:
                         case Opcode.Ldloc1:
@@ -352,22 +355,22 @@ namespace Mono.Compiler.BigStep.LLVMBackend {
                                                                 return new NamedTempValue (tmp, tempName);
                                                         });
                                 break;
-				case Opcode.Ldsfld:
-					// const => tmp
-					int token = (operands[0] as Int32ConstOperand).Value;
-					InvokeOperation (op, exop, operands,
-							 vm => {
-								 // TODO: It would be nice if operand[0] just carried the fieldInfo here
-								 FieldInfo fieldInfo = RuntimeInfo.GetFieldInfoForToken (MethodInfo, token);
+                        case Opcode.Ldsfld:
+                                // const => tmp
+                                int token = (operands[0] as Int32ConstOperand).Value;
+                                InvokeOperation (op, exop, operands,
+                                                        vm => {
+                                                                // TODO: It would be nice if operand[0] just carried the fieldInfo here
+                                                                FieldInfo fieldInfo = RuntimeInfo.GetFieldInfoForToken (MethodInfo, token);
 
-								 LLVMValueRef fieldAddress = GetConstValue (RuntimeInfo.ComputeFieldAddress (fieldInfo));
+                                                                LLVMValueRef fieldAddress = GetConstValue (RuntimeInfo.ComputeFieldAddress (fieldInfo));
 
-								 LLVMTypeRef fieldType = LLVM.Int32Type (); /* FIXME: get from field info */
-								 LLVMValueRef address = LLVM.ConstIntToPtr (fieldAddress, LLVM.PointerType (fieldType, 0));
-								 LLVMValueRef tmp = LLVM.BuildLoad (builder, address, tempName);
-								 return new NamedTempValue (tmp, tempName);
-							 });
-					break;
+                                                                LLVMTypeRef fieldType = LLVM.Int32Type (); /* FIXME: get from field info */
+                                                                LLVMValueRef address = LLVM.ConstIntToPtr (fieldAddress, LLVM.PointerType (fieldType, 0));
+                                                                LLVMValueRef tmp = LLVM.BuildLoad (builder, address, tempName);
+                                                                return new NamedTempValue (tmp, tempName);
+                                                        });
+                                break;
                         case Opcode.Add:
                         case Opcode.AddOvf: // TODO - Handle overflow
                         case Opcode.AddOvfUn: // TODO - Handle overflow, unsigned
@@ -428,7 +431,7 @@ namespace Mono.Compiler.BigStep.LLVMBackend {
                                                                 LLVMBasicBlockRef bbFalse = this.GetImplicitBranchTarget (pcIndex);
                                                                 LLVMValueRef tmp = LLVM.BuildCondBr (builder, vm.Temp0, bbTrue, bbFalse);
                                                                 return new NamedTempValue (tmp, tempName);
-                                                        });   
+                                                        });
                                 break;
                         case Opcode.Brfalse:
                         case Opcode.BrfalseS:
@@ -480,11 +483,11 @@ namespace Mono.Compiler.BigStep.LLVMBackend {
                                 // branch on <=, unsigned
                                 // tmp, tmp, pc
                                 InvokeOperation (op, exop, operands,
-                                                        vm => {
-                                                                var tuple = CompareAndJumpTo (
-                                                                        LLVMRealPredicate.LLVMRealULE, LLVMIntPredicate.LLVMIntULE, operands, vm, pcIndex);
-                                                                LLVMValueRef tmp = LLVM.BuildCondBr (builder, tuple.Item1, tuple.Item2, tuple.Item3);
-                                                        });
+                                                vm => {
+                                                        var tuple = CompareAndJumpTo (
+                                                                LLVMRealPredicate.LLVMRealULE, LLVMIntPredicate.LLVMIntULE, operands, vm, pcIndex);
+                                                        LLVMValueRef tmp = LLVM.BuildCondBr (builder, tuple.Item1, tuple.Item2, tuple.Item3);
+                                                });
                                 break;
                         case Opcode.Blt:
                         case Opcode.BltS:

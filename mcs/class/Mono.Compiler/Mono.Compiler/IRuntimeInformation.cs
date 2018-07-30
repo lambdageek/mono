@@ -17,4 +17,5 @@ namespace Mono.Compiler
 		FieldInfo GetFieldInfoForToken (MethodInfo mi, int token);
 
 		IntPtr ComputeFieldAddress (FieldInfo fi);
+	}
 }
