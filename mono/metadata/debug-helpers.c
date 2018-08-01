@@ -53,7 +53,7 @@ static const struct msgstr_t {
 #undef WRAPPER
 };
 static const gint16 opidx [] = {
-#define WRAPPER(a,b) [MONO_WRAPPER_ ## a] = offsetof (struct msgstr_t, MSGSTRFIELD(__LINE__)),
+#define WRAPPER(a,b) offsetof (struct msgstr_t, MSGSTRFIELD(__LINE__)),
 #include "wrapper-types.h"
 #undef WRAPPER
 };
@@ -1139,7 +1139,7 @@ objval_describe (MonoClass *klass, const char *addr)
 	for (p = klass; p != NULL; p = p->parent) {
 		gpointer iter = NULL;
 		int printed_header = FALSE;
-		while ((field = mono_class_get_fields (p, &iter))) {
+		while ((field = mono_class_get_fields_internal (p, &iter))) {
 			if (field->type->attrs & (FIELD_ATTRIBUTE_STATIC | FIELD_ATTRIBUTE_HAS_FIELD_RVA))
 				continue;
 
@@ -1210,7 +1210,7 @@ mono_class_describe_statics (MonoClass* klass)
 
 	for (p = klass; p != NULL; p = p->parent) {
 		gpointer iter = NULL;
-		while ((field = mono_class_get_fields (p, &iter))) {
+		while ((field = mono_class_get_fields_internal (p, &iter))) {
 			if (field->type->attrs & FIELD_ATTRIBUTE_LITERAL)
 				continue;
 			if (!(field->type->attrs & (FIELD_ATTRIBUTE_STATIC | FIELD_ATTRIBUTE_HAS_FIELD_RVA)))

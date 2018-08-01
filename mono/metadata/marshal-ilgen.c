@@ -37,6 +37,7 @@
 #include "mono/metadata/reflection-internals.h"
 #include "mono/metadata/threadpool.h"
 #include "mono/metadata/handle.h"
+#include "mono/metadata/custom-attrs-internals.h"
 #include "mono/utils/mono-counters.h"
 #include "mono/utils/mono-tls.h"
 #include "mono/utils/mono-memory-model.h"
@@ -153,21 +154,18 @@ get_fixed_buffer_attr (MonoClassField *field, MonoType **out_etype, int *out_len
 		}
 	}
 	if (attr) {
-		MonoArray *typed_args, *named_args;
+		gpointer *typed_args, *named_args;
 		CattrNamedArg *arginfo;
-		MonoObject *o;
+		int num_named_args;
 
-		mono_reflection_create_custom_attr_data_args (mono_defaults.corlib, attr->ctor, attr->data, attr->data_size, &typed_args, &named_args, &arginfo, error);
+		mono_reflection_create_custom_attr_data_args_noalloc (mono_defaults.corlib, attr->ctor, attr->data, attr->data_size,
+															  &typed_args, &named_args, &num_named_args, &arginfo, error);
 		if (!is_ok (error))
 			return FALSE;
-		g_assert (mono_array_length (typed_args) == 2);
-
-		/* typed args */
-		o = mono_array_get (typed_args, MonoObject*, 0);
-		*out_etype = monotype_cast (o)->type;
-		o = mono_array_get (typed_args, MonoObject*, 1);
-		g_assert (o->vtable->klass == mono_defaults.int32_class);
-		*out_len = *(gint32*)mono_object_unbox (o);
+		*out_etype = typed_args [0];
+		*out_len = *(gint32*)typed_args [1];
+		g_free (typed_args);
+		g_free (named_args);
 		g_free (arginfo);
 	}
 	if (cinfo && !cinfo->cached)
@@ -6343,7 +6341,7 @@ emit_native_icall_wrapper_ilgen (MonoMethodBuilder *mb, MonoMethod *method, Mono
 		if (sig->hasthis) {
 			mono_mb_emit_byte (mb, CEE_LDARG_0);
 			/* TODO support adding wrappers to non-static struct methods */
-			g_assert (!mono_class_is_valuetype(mono_method_get_class (method)));
+			g_assert (!m_class_is_valuetype (mono_method_get_class (method)));
 			mono_mb_emit_icall (mb, mono_icall_handle_new);
 		}
 		for (int i = 0; i < sig->param_count; i++) {

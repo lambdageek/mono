@@ -300,16 +300,16 @@ gc_alloc_fixed_non_heap_list (size_t size)
 	if (mono_gc_is_moving ())
 		return g_malloc0 (size);
 	else
-		return mono_gc_alloc_fixed (appdomain_list_size * sizeof (void*), MONO_GC_DESCRIPTOR_NULL, MONO_ROOT_SOURCE_DOMAIN, NULL, "Domain List");
+		return mono_gc_alloc_fixed (size, MONO_GC_DESCRIPTOR_NULL, MONO_ROOT_SOURCE_DOMAIN, NULL, "Domain List");
 }
 
 static void
 gc_free_fixed_non_heap_list (void *ptr)
 {
 	if (mono_gc_is_moving ())
-		return g_free (ptr);
+		g_free (ptr);
 	else
-		return mono_gc_free_fixed (ptr);
+		mono_gc_free_fixed (ptr);
 }
 /*
  * Allocate an id for domain and set domain->domain_id.
@@ -923,6 +923,7 @@ mono_domain_unset (void)
 void
 mono_domain_set_internal_with_options (MonoDomain *domain, gboolean migrate_exception)
 {
+	MONO_REQ_GC_UNSAFE_MODE;
 	MonoInternalThread *thread;
 
 	if (mono_domain_get () == domain)

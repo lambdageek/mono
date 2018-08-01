@@ -47,6 +47,7 @@
 #include "mono/metadata/threadpool.h"
 #include "mono/metadata/handle.h"
 #include "mono/metadata/object-internals.h"
+#include "mono/metadata/custom-attrs-internals.h"
 #include "mono/utils/mono-counters.h"
 #include "mono/utils/mono-tls.h"
 #include "mono/utils/mono-memory-model.h"
@@ -3806,33 +3807,29 @@ mono_marshal_get_managed_wrapper (MonoMethod *method, MonoClass *delegate_klass,
 			}
 		}
 		if (attr) {
-			MonoArray *typed_args, *named_args;
+			gpointer *typed_args, *named_args;
 			CattrNamedArg *arginfo;
-			MonoObject *o;
 			gint32 call_conv;
 			gint32 charset = 0;
 			MonoBoolean set_last_error = 0;
+			int num_named_args;
 			ERROR_DECL (error);
 
-			mono_reflection_create_custom_attr_data_args (mono_defaults.corlib, attr->ctor, attr->data, attr->data_size, &typed_args, &named_args, &arginfo, error);
+			mono_reflection_create_custom_attr_data_args_noalloc (mono_defaults.corlib, attr->ctor, attr->data, attr->data_size,
+																  &typed_args, &named_args, &num_named_args, &arginfo, error);
 			g_assert (mono_error_ok (error));
-			g_assert (mono_array_length (typed_args) == 1);
 
 			/* typed args */
-			o = mono_array_get (typed_args, MonoObject*, 0);
-			call_conv = *(gint32*)mono_object_unbox (o);
-
+			call_conv = *(gint32*)typed_args [0];
 			/* named args */
-			for (i = 0; i < mono_array_length (named_args); ++i) {
+			for (i = 0; i < num_named_args; ++i) {
 				CattrNamedArg *narg = &arginfo [i];
-
-				o = mono_array_get (named_args, MonoObject*, i);
 
 				g_assert (narg->field);
 				if (!strcmp (narg->field->name, "CharSet")) {
-					charset = *(gint32*)mono_object_unbox (o);
+					charset = *(gint32*)named_args [i];
 				} else if (!strcmp (narg->field->name, "SetLastError")) {
-					set_last_error = *(MonoBoolean*)mono_object_unbox (o);
+					set_last_error = *(MonoBoolean*)named_args [i];
 				} else if (!strcmp (narg->field->name, "BestFitMapping")) {
 					// best_fit_mapping = *(MonoBoolean*)mono_object_unbox (o);
 				} else if (!strcmp (narg->field->name, "ThrowOnUnmappableChar")) {
@@ -3841,7 +3838,8 @@ mono_marshal_get_managed_wrapper (MonoMethod *method, MonoClass *delegate_klass,
 					g_assert_not_reached ();
 				}
 			}
-
+			g_free (typed_args);
+			g_free (named_args);
 			g_free (arginfo);
 
 			memset (&piinfo, 0, sizeof (piinfo));
@@ -5183,7 +5181,7 @@ ves_icall_System_Runtime_InteropServices_Marshal_OffsetOf (MonoReflectionTypeHan
 		MonoClassField* field;
 		int i = 0;
 		gpointer iter = NULL;
-		while ((field = mono_class_get_fields (klass, &iter))) {
+		while ((field = mono_class_get_fields_internal (klass, &iter))) {
 			if (field->type->attrs & FIELD_ATTRIBUTE_STATIC)
 				continue;
 			if (!strcmp (fname, mono_field_get_name (field))) {
@@ -5486,7 +5484,7 @@ mono_marshal_load_type_info (MonoClass* klass)
 	mono_native_tls_set_value (load_type_info_tls_id, loads_list);
 	
 	iter = NULL;
-	while ((field = mono_class_get_fields (klass, &iter))) {
+	while ((field = mono_class_get_fields_internal (klass, &iter))) {
 		if (field->type->attrs & FIELD_ATTRIBUTE_STATIC)
 			continue;
 		if (mono_field_is_deleted (field))
@@ -5513,7 +5511,7 @@ mono_marshal_load_type_info (MonoClass* klass)
 	packing = m_class_get_packing_size (klass) ? m_class_get_packing_size (klass) : 8;
 	iter = NULL;
 	j = 0;
-	while ((field = mono_class_get_fields (klass, &iter))) {
+	while ((field = mono_class_get_fields_internal (klass, &iter))) {
 		int size;
 		guint32 align;
 		

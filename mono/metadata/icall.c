@@ -103,9 +103,6 @@
 #include <mono/utils/mono-merp.h>
 #include <mono/utils/mono-logger-internals.h>
 
-#include "decimal-ms.h"
-#include "number-ms.h"
-
 #if !defined(HOST_WIN32) && defined(HAVE_SYS_UTSNAME_H)
 #include <sys/utsname.h>
 #endif
@@ -1086,7 +1083,7 @@ ves_icall_System_ValueType_InternalGetHashCode (MonoObject *this_obj, MonoArray 
 	 * This way, we can avoid costly reflection operations in managed code.
 	 */
 	iter = NULL;
-	while ((field = mono_class_get_fields (klass, &iter))) {
+	while ((field = mono_class_get_fields_internal (klass, &iter))) {
 		if (field->type->attrs & FIELD_ATTRIBUTE_STATIC)
 			continue;
 		if (mono_field_is_deleted (field))
@@ -1143,6 +1140,8 @@ ves_icall_System_ValueType_Equals (MonoObject *this_obj, MonoObject *that, MonoA
 	gpointer iter;
 	int count = 0;
 
+	*fields = NULL;
+
 	MONO_CHECK_ARG_NULL (that, FALSE);
 
 	if (this_obj->vtable != that->vtable)
@@ -1159,9 +1158,8 @@ ves_icall_System_ValueType_Equals (MonoObject *this_obj, MonoObject *that, MonoA
 	 * managed side. This way, we can avoid costly reflection operations in 
 	 * managed code.
 	 */
-	*fields = NULL;
 	iter = NULL;
-	while ((field = mono_class_get_fields (klass, &iter))) {
+	while ((field = mono_class_get_fields_internal (klass, &iter))) {
 		if (field->type->attrs & FIELD_ATTRIBUTE_STATIC)
 			continue;
 		if (mono_field_is_deleted (field))
@@ -1935,12 +1933,12 @@ leave:
 }
 
 ICALL_EXPORT gint32
-ves_icall_MonoField_GetFieldOffset (MonoReflectionField *field)
+ves_icall_MonoField_GetFieldOffset (MonoReflectionFieldHandle field, MonoError *error)
 {
-	MonoClass *parent = field->field->parent;
-	mono_class_setup_fields (parent);
+	MonoClassField *class_field = MONO_HANDLE_GETVAL (field, field);
+	mono_class_setup_fields (class_field->parent);
 
-	return field->field->offset - sizeof (MonoObject);
+	return class_field->offset - sizeof (MonoObject);
 }
 
 ICALL_EXPORT MonoReflectionTypeHandle
@@ -3844,7 +3842,7 @@ ves_icall_System_Enum_GetEnumValuesAndNames (MonoReflectionTypeHandle type, Mono
 	return_val_if_nok (error, FALSE);
 
 	iter = NULL;
-	while ((field = mono_class_get_fields (enumc, &iter))) {
+	while ((field = mono_class_get_fields_internal (enumc, &iter))) {
 		get_enum_field(domain, names, values, base_type, field, &j, &previous_value, &sorted, error);
 		if (!is_ok (error))
 			break;
@@ -4579,11 +4577,11 @@ ves_icall_System_Reflection_Assembly_InternalGetType (MonoReflectionAssemblyHand
 	if (!type) {
 		if (throwOnError) {
 			ERROR_DECL_VALUE (inner_error);
-			char *typename = mono_string_handle_to_utf8 (name, &inner_error);
+			char *type_name = mono_string_handle_to_utf8 (name, &inner_error);
 			mono_error_assert_ok (&inner_error);
 			MonoAssembly *assembly = MONO_HANDLE_GETVAL (assembly_h, assembly);
 			char *assmname = mono_stringify_assembly_name (&assembly->aname);
-			mono_error_set_type_load_name (error, typename, assmname, "%s", "");
+			mono_error_set_type_load_name (error, type_name, assmname, "%s", "");
 			goto fail;
 		}
 
@@ -6034,10 +6032,9 @@ ves_icall_System_Reflection_Module_ResolveMethodToken (MonoImage *image, guint32
 	return module_resolve_method_token (image, token, type_args, method_args, resolve_error, error);
 }
 
-ICALL_EXPORT MonoString*
-ves_icall_System_Reflection_Module_ResolveStringToken (MonoImage *image, guint32 token, MonoResolveTokenError *resolve_error)
+ICALL_EXPORT MonoStringHandle
+ves_icall_System_Reflection_Module_ResolveStringToken (MonoImage *image, guint32 token, MonoResolveTokenError *resolve_error, MonoError *error)
 {
-	ERROR_DECL (error);
 	int index = mono_metadata_token_index (token);
 
 	*resolve_error = ResolveTokenError_Other;
@@ -6045,25 +6042,25 @@ ves_icall_System_Reflection_Module_ResolveStringToken (MonoImage *image, guint32
 	/* Validate token */
 	if (mono_metadata_token_code (token) != MONO_TOKEN_STRING) {
 		*resolve_error = ResolveTokenError_BadTable;
-		return NULL;
+		return NULL_HANDLE_STRING;
 	}
 
 	if (image_is_dynamic (image)) {
-		MonoString * result = (MonoString *)mono_lookup_dynamic_token_class (image, token, FALSE, NULL, NULL, error);
-		mono_error_cleanup (error);
+		ERROR_DECL (ignore_inner_error);
+		// FIXME ignoring error
+		// FIXME Push MONO_HANDLE_NEW to lower layers.
+		MonoStringHandle result = MONO_HANDLE_NEW (MonoString, mono_lookup_dynamic_token_class (image, token, FALSE, NULL, NULL, ignore_inner_error));
+		mono_error_cleanup (ignore_inner_error);
 		return result;
 	}
 
 	if ((index <= 0) || (index >= image->heap_us.size)) {
 		*resolve_error = ResolveTokenError_OutOfRange;
-		return NULL;
+		return NULL_HANDLE_STRING;
 	}
 
 	/* FIXME: What to do if the index points into the middle of a string ? */
-
-	MonoString *result = mono_ldstr_checked (mono_domain_get (), image, index, error);
-	mono_error_set_pending_exception (error);
-	return result;
+	return mono_ldstr_handle (mono_domain_get (), image, index, error);
 }
 
 static MonoClassField*

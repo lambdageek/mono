@@ -57,7 +57,7 @@ namespace Mono.AppleTls
 			if (handle != IntPtr.Zero)
 				return new SafeSecCertificateHandle (handle, false);
 
-			using (var data = CFData.FromData (impl.GetRawCertData ())) {
+			using (var data = CFData.FromData (impl.RawData)) {
 				handle = SecCertificateCreateWithData (IntPtr.Zero, data.Handle);
 				if (handle == IntPtr.Zero)
 					throw new ArgumentException ("Not a valid DER-encoded X.509 certificate");
@@ -180,9 +180,9 @@ namespace Mono.AppleTls
 
 				return true;
 			} finally {
-				if (firstDataPtr != null)
+				if (firstDataPtr != IntPtr.Zero)
 					CFObject.CFRelease (firstDataPtr);
-				if (secondDataPtr != null)
+				if (secondDataPtr != IntPtr.Zero)
 					CFObject.CFRelease (secondDataPtr);
 			}
 		}

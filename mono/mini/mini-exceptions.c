@@ -889,9 +889,12 @@ get_method_from_stack_frame (MonoJitInfo *ji, gpointer generic_info)
 gboolean
 mono_exception_walk_trace (MonoException *ex, MonoExceptionFrameWalk func, gpointer user_data)
 {
+	gboolean res;
+
 	MONO_ENTER_GC_UNSAFE;
-	mono_exception_walk_trace_internal (ex, func, user_data);
+	res = mono_exception_walk_trace_internal (ex, func, user_data);
 	MONO_EXIT_GC_UNSAFE;
+	return res;
 }
 
 gboolean
@@ -2246,7 +2249,7 @@ mono_handle_exception_internal (MonoContext *ctx, MonoObject *obj, gboolean resu
 			error_init (error);
 			MonoMethod *get_message = system_exception_get_message == NULL ? NULL : mono_object_get_virtual_method (obj, system_exception_get_message);
 			MonoObject *message;
-			const char *type_name = mono_class_get_name (mono_object_class (mono_ex));
+			const char *type_name = m_class_get_name (mono_object_class (mono_ex));
 			char *msg = NULL;
 			if (get_message == NULL) {
 				message = NULL;
