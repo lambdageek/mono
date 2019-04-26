@@ -329,6 +329,8 @@ typedef struct _MonoThunkFreeList {
 
 typedef struct _MonoJitCodeHash MonoJitCodeHash;
 
+typedef struct _MonoLoadedImages MonoLoadedImages;
+
 struct _MonoDomain {
 	/*
 	 * This lock must never be taken before the loader lock,
@@ -613,7 +615,8 @@ mono_domain_parse_assembly_bindings (MonoDomain *domain, int amajor, int aminor,
 gboolean
 mono_assembly_name_parse (const char *name, MonoAssemblyName *aname);
 
-MonoImage *mono_assembly_open_from_bundle (const char *filename,
+MonoImage *mono_assembly_open_from_bundle (MonoLoadedImages *li,
+					   const char *filename,
 					   MonoImageOpenStatus *status,
 					   gboolean refonly);
 

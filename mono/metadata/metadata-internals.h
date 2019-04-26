@@ -185,7 +185,6 @@ struct MonoTypeNameParse {
 	GList *nested;
 };
 
-
 typedef enum MonoAssemblyContextKind {
 	/* Default assembly context: Load(String) and assembly references */
 	MONO_ASMCTX_DEFAULT = 0,
@@ -1076,7 +1075,7 @@ MonoImage *mono_image_open_raw (const char *fname, MonoImageOpenStatus *status);
 
 MonoImage *mono_image_open_metadata_only (const char *fname, MonoImageOpenStatus *status);
 
-MonoImage *mono_image_open_from_data_internal (char *data, guint32 data_len, gboolean need_copy, MonoImageOpenStatus *status, gboolean refonly, gboolean metadata_only, const char *name);
+MonoImage *mono_image_open_from_data_internal (MonoLoadedImages *li, char *data, guint32 data_len, gboolean need_copy, MonoImageOpenStatus *status, gboolean refonly, gboolean metadata_only, const char *name);
 
 MonoException *mono_get_exception_field_access_msg (const char *msg);
 
@@ -1175,5 +1174,11 @@ m_image_has_entry_point (MonoImage *image)
 }
 
 #endif
+
+MonoLoadedImages *
+mono_domain_default_loaded_images (MonoDomain *domain);
+
+MonoImage*
+mono_image_loaded_internal (MonoDomain *domain, const char *name, mono_bool refonly);
 
 #endif /* __MONO_METADATA_INTERNALS_H__ */

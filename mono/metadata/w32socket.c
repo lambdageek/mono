@@ -714,7 +714,7 @@ get_socket_assembly (void)
 	if (domain->socket_assembly == NULL) {
 		MonoImage *socket_assembly;
 
-		socket_assembly = mono_image_loaded_internal ("System", FALSE);
+		socket_assembly = mono_image_loaded_internal (domain, "System", FALSE);
 		if (!socket_assembly) {
 			MonoAssemblyOpenRequest req;
 			mono_assembly_request_prepare (&req.request, sizeof (req), MONO_ASMCTX_DEFAULT);
@@ -1841,7 +1841,7 @@ ves_icall_System_Net_Sockets_Socket_GetSocketOption_obj_internal (gsize sock, gi
 		static MonoImage *mono_posix_image = NULL;
 		
 		if (mono_posix_image == NULL) {
-			mono_posix_image = mono_image_loaded_internal ("Mono.Posix", FALSE);
+			mono_posix_image = mono_image_loaded_internal (domain, "Mono.Posix", FALSE);
 			if (!mono_posix_image) {
 				MonoAssemblyOpenRequest req;
 				mono_assembly_request_prepare (&req.request, sizeof (req), MONO_ASMCTX_DEFAULT);

@@ -139,8 +139,10 @@ mono_ppdb_load_file (MonoImage *image, const guint8 *raw_contents, int size)
 	}
 
 	if (raw_contents) {
-		if (size > 4 && strncmp ((char*)raw_contents, "BSJB", 4) == 0)
-			ppdb_image = mono_image_open_from_data_internal ((char*)raw_contents, size, TRUE, &status, FALSE, TRUE, NULL);
+		if (size > 4 && strncmp ((char*)raw_contents, "BSJB", 4) == 0) {
+			MonoLoadedImages *li = mono_domain_default_loaded_images (mono_get_root_domain ()); /* probably doesn't matter for ppdb images? */
+			ppdb_image = mono_image_open_from_data_internal (li, (char*)raw_contents, size, TRUE, &status, FALSE, TRUE, NULL);
+		}
 	} else {
 		/* ppdb files drop the .exe/.dll extension */
 		filename = mono_image_get_filename (image);

@@ -609,12 +609,12 @@ static MonoMethod *mono_method_securestring_decrypt;
 static MonoMethod *mono_method_securestring_encrypt;
 
 static void
-mono_invoke_protected_memory_method (MonoArrayHandle data, MonoObjectHandle scope,
+mono_invoke_protected_memory_method (MonoDomain *domain, MonoArrayHandle data, MonoObjectHandle scope,
 	const char *method_name, MonoMethod **method, MonoError *error)
 {
 	if (!*method) {
 		if (system_security_assembly == NULL) {
-			system_security_assembly = mono_image_loaded_internal ("System.Security", FALSE);
+			system_security_assembly = mono_image_loaded_internal (domain, "System.Security", FALSE);
 			if (!system_security_assembly) {
 				MonoAssemblyOpenRequest req;
 				mono_assembly_request_prepare (&req.request, sizeof (req), MONO_ASMCTX_DEFAULT);
@@ -639,10 +639,12 @@ mono_invoke_protected_memory_method (MonoArrayHandle data, MonoObjectHandle scop
 void
 ves_icall_System_Security_SecureString_DecryptInternal (MonoArrayHandle data, MonoObjectHandle scope, MonoError *error)
 {
-	mono_invoke_protected_memory_method (data, scope, "Unprotect", &mono_method_securestring_decrypt, error);
+	MonoDomain *domain = mono_domain_get ();
+	mono_invoke_protected_memory_method (domain, data, scope, "Unprotect", &mono_method_securestring_decrypt, error);
 }
 void
 ves_icall_System_Security_SecureString_EncryptInternal (MonoArrayHandle data, MonoObjectHandle scope, MonoError *error)
 {
-	mono_invoke_protected_memory_method (data, scope, "Protect", &mono_method_securestring_encrypt, error);
+	MonoDomain *domain = mono_domain_get ();
+	mono_invoke_protected_memory_method (domain, data, scope, "Protect", &mono_method_securestring_encrypt, error);
 }

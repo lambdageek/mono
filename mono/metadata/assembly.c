@@ -2148,7 +2148,7 @@ absolute_dir (const gchar *filename)
  * returns NULL
  */
 MonoImage *
-mono_assembly_open_from_bundle (const char *filename, MonoImageOpenStatus *status, gboolean refonly)
+mono_assembly_open_from_bundle (MonoLoadedImages *li, const char *filename, MonoImageOpenStatus *status, gboolean refonly)
 {
 	int i;
 	char *name;
@@ -2170,7 +2170,7 @@ mono_assembly_open_from_bundle (const char *filename, MonoImageOpenStatus *statu
 	mono_assemblies_lock ();
 	for (i = 0; !image && bundles [i]; ++i) {
 		if (strcmp (bundles [i]->name, is_satellite ? filename : name) == 0) {
-			image = mono_image_open_from_data_internal ((char*)bundles [i]->data, bundles [i]->size, FALSE, status, refonly, FALSE, name);
+			image = mono_image_open_from_data_internal (li, (char*)bundles [i]->data, bundles [i]->size, FALSE, status, refonly, FALSE, name);
 			break;
 		}
 	}
@@ -2332,15 +2332,18 @@ mono_assembly_request_open (const char *filename, const MonoAssemblyOpenRequest 
 	 */
 	const gboolean load_from_context = load_req.asmctx == MONO_ASMCTX_LOADFROM || load_req.asmctx == MONO_ASMCTX_INDIVIDUAL || load_req.asmctx == MONO_ASMCTX_REFONLY;
 
+	/* FIXME: TODO: this is wrong - should get it from the load request ALC */
+	MonoLoadedImages *li = mono_domain_default_loaded_images (mono_domain_get ());
+
 	// If VM built with mkbundle
 	loaded_from_bundle = FALSE;
 	if (bundles != NULL) {
-		image = mono_assembly_open_from_bundle (fname, status, refonly);
+		image = mono_assembly_open_from_bundle (li, fname, status, refonly);
 		loaded_from_bundle = image != NULL;
 	}
 
 	if (!image)
-		image = mono_image_open_a_lot (fname, status, refonly, load_from_context);
+		image = mono_image_open_a_lot (/*li,*/ /* FIXME: TODO: add li here*/  fname, status, refonly, load_from_context);
 
 	if (!image){
 		if (*status == MONO_IMAGE_OK)
@@ -2369,7 +2372,6 @@ mono_assembly_request_open (const char *filename, const MonoAssemblyOpenRequest 
 	}
 
 	if (image->assembly) {
-		g_assert (redirected);
 		/* We want to return the MonoAssembly that's already loaded,
 		 * but if we're using the strict assembly loader, we also need
 		 * to check that the previously loaded assembly matches the
