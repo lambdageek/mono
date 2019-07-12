@@ -1476,7 +1476,7 @@ load_reference_by_aname_refonly_asmctx (MonoAssemblyName *aname, MonoAssembly *a
 			req.basedir = assm->basedir;
 			reference = mono_assembly_request_byname (aname, &req, status);
 		} else {
-			reference = mono_assembly_loaded_full (aname, TRUE);
+			reference = mono_assembly_loaded_internal (NULL, aname, TRUE);
 			if (!reference)
 				/* Try a postload search hook */
 				reference = mono_assembly_invoke_search_hook_internal (aname, assm, TRUE, TRUE);
@@ -1553,7 +1553,7 @@ load_reference_by_aname_individual_asmctx (MonoAssemblyName *aname, MonoAssembly
 	aname = mono_assembly_remap_version (aname, &maped_aname);
 	aname = mono_assembly_apply_binding (aname, &maped_name_pp);
 
-	reference = mono_assembly_loaded_full (aname, FALSE);
+	reference = mono_assembly_loaded_internal (mono_domain_ambient_alc (mono_domain_get ()), aname, FALSE);
 	/* Still try to load from application base directory, MONO_PATH or the
 	 * GAC.  This is consistent with what .NET Framework (4.7) actually
 	 * does, rather than what the documentation implies: If `LoadFile` is
@@ -3688,9 +3688,9 @@ mono_assembly_load_with_partial_name_internal (const char *name, MonoImageOpenSt
 		aname = mono_assembly_remap_version (aname, &mapped_aname);
 	
 	/* FIXME: get the ALC as an argument from the caller */
-	MonoAssemblyLoadContext *alc = mono_domain_default_alc (mono_domain_get ());
+	MonoAssemblyLoadContext *alc = mono_domain_ambient_alc (mono_domain_get ());
 
-	res = mono_assembly_loaded_full (aname, FALSE);
+	res = mono_assembly_loaded_internal (alc, aname, FALSE);
 	if (res) {
 		mono_assembly_name_free (aname);
 		return res;
@@ -4405,7 +4405,7 @@ mono_assembly_request_byname_nosearch (MonoAssemblyName *aname,
 	if (!refonly)
 		aname = mono_assembly_apply_binding (aname, &maped_name_pp);
 
-	result = mono_assembly_loaded_full (aname, refonly);
+	result = mono_assembly_loaded_internal (req->request.alc, aname, refonly);
 	if (result)
 		return result;
 
@@ -4591,6 +4591,13 @@ mono_assembly_load (MonoAssemblyName *aname, const char *basedir, MonoImageOpenS
 MonoAssembly*
 mono_assembly_loaded_full (MonoAssemblyName *aname, gboolean refonly)
 {
+	MonoAssemblyLoadContext *alc = mono_domain_ambient_alc (mono_domain_get ());
+	return mono_assembly_loaded_internal (alc, aname, refonly);
+}
+
+MonoAssembly *
+mono_assembly_loaded_internal (MonoAssemblyLoadContext *alc, MonoAssemblyName *aname, gboolean refonly)
+{
 	MonoAssembly *res;
 	MonoAssemblyName maped_aname;
 
@@ -4615,7 +4622,7 @@ mono_assembly_loaded (MonoAssemblyName *aname)
 {
 	MonoAssembly *res;
 	MONO_ENTER_GC_UNSAFE;
-	res = mono_assembly_loaded_full (aname, FALSE);
+	res = mono_assembly_loaded_internal (mono_domain_ambient_alc (mono_domain_get ()), aname, FALSE);
 	MONO_EXIT_GC_UNSAFE;
 	return res;
 }
