@@ -74,6 +74,8 @@
 
 #ifdef __cplusplus
 
+#include <type_traits>
+
 #define g_cast monoeg_g_cast // in case not inlined (see eglib-remap.h)
 
 // g_cast converts void* to T*.
@@ -97,6 +99,9 @@ public:
 	template <typename TTo>
 	operator TTo* () const
 	{
+		static_assert ((std::is_same<typename std::remove_cv<TTo>::type, void>::value ||
+				std::is_trivially_destructible<TTo>::value),
+			       "Don't use C-style allocation for classes with destructors. Destructors do not run.");
 		return (TTo*)x;
 	}
 };
