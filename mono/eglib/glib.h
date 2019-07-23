@@ -1410,6 +1410,7 @@ G_END_DECLS
 #ifdef __cplusplus
 #include <gxx-alloc.hpp>
 #include <gxx-base.hpp>
+#include <gxx-traits.hpp>
 #endif
 
 #endif // __GLIB_H

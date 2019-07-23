@@ -57,7 +57,8 @@ libeglib_la_SOURCES = \
 
 EXTRA_libeglib_la_SOURCES = \
 	gxx-alloc.hpp	\
-	gxx-base.hpp
+	gxx-base.hpp	\
+	gxx-traits.hpp
 
 CFLAGS := $(filter-out @CXX_REMOVE_CFLAGS@, @CFLAGS@) @CXX_ADD_CFLAGS@
 
