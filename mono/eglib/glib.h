@@ -1407,4 +1407,9 @@ G_END_DECLS
 #define g_try_realloc(obj, size) (g_cast (monoeg_try_realloc ((obj), (size))))
 #define g_memdup(mem, size) (g_cast (monoeg_g_memdup ((mem), (size))))
 
+#ifdef __cplusplus
+#include <gxx-alloc.hpp>
+#include <gxx-base.hpp>
+#endif
+
 #endif // __GLIB_H

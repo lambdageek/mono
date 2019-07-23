@@ -55,6 +55,10 @@ libeglib_la_SOURCES = \
 	unicode-data.h	\
 	$(os_files)
 
+EXTRA_libeglib_la_SOURCES = \
+	gxx-alloc.hpp	\
+	gxx-base.hpp
+
 CFLAGS := $(filter-out @CXX_REMOVE_CFLAGS@, @CFLAGS@) @CXX_ADD_CFLAGS@
 
 eglibdir=$(datadir)/mono-$(API_VER)/mono/eglib
