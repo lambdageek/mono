@@ -233,6 +233,8 @@ MONO_SIG_HANDLER_FUNC (static, sigabrt_signal_handler)
 	}
 }
 
+static volatile int32_t first_sigterm;
+
 MONO_SIG_HANDLER_FUNC (static, sigterm_signal_handler)
 {
 #ifndef DISABLE_CRASH_REPORTING
@@ -244,10 +246,21 @@ MONO_SIG_HANDLER_FUNC (static, sigterm_signal_handler)
 	MonoStackHash hashes;
 	mono_sigctx_to_monoctx (ctx, &mctx);
 
+	// FIXME: this is broken for DumpStateTotal - when we return to running
+	// code, this will be set, so a second SIGTERM will fall into the other
+	// branch and we'll be back to a hard assert of a non-controlling process.
+	gboolean first_signal = !mono_atomic_xchg_i32 (&first_sigterm, 1);
 	// Will return when the dumping is done, so this thread can continue
 	// running. Returns FALSE on unrecoverable error.
-	if (!mono_threads_summarize_execute (&mctx, &output, &hashes, FALSE, NULL, 0))
-		g_error ("Crash reporter dumper exited due to fatal error.");
+	if (first_signal) {
+		// Process was killed from outside since crash reporting wasn't running yet.
+		// FIXME: do we want mono_handle_native_crash here instead?
+		mono_dump_native_crash_info ("SIGTERM", &mctx, NULL);
+	} else {
+		// Crash reporting already running and we got a second SIGTERM from some place
+		if (!mono_threads_summarize_execute (&mctx, &output, &hashes, FALSE, NULL, 0))
+			g_error ("Crash reporter dumper exited due to fatal error.");
+	}
 #endif
 
 	mono_chain_signal (MONO_SIG_HANDLER_PARAMS);
