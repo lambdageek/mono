@@ -1,3 +1,5 @@
+# Xamarin.iOS
+
 ```
 git clone --branch add-ios https://github.com/akoeplinger/runtime
 cd runtime
@@ -22,4 +24,20 @@ make -C sdks/ios run-ios-sim-System.Runtime.Tests
 # for iOS 13 device runs we need latest ios-deploy tool from master:
 brew uninstall ios-deploy
 brew install --HEAD ios-deploy
+```
+
+# Xamarin.Android
+
+(Host only for now. And probably only Darwin.)
+
+```
+cd mono
+
+echo ENABLE_ANDROID=1 > sdks/Make.config
+echo DISABLE_CLASSIC=1 >> sdks/Make.config
+echo ENABLE_NETCORE=1 >> sdks/Make.config
+
+make -C sdks/builds provision-android
+make -C sdks/builds accept-android-license
+make -C sdks/builds archive-android IGNORE_PROVISION_ANDROID=1 IGNORE_PROVISION_MXE=1 NINJA=
 ```

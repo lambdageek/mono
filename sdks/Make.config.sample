@@ -29,3 +29,9 @@ ENABLE_ANDROID = 1
 
 #Enables passing --enable-cxx to configure.
 #ENABLE_CXX = 1
+
+#Disables building the legacy BCL and non-netcore Mono runtime
+#DISABLE_CLASSIC = 1
+
+#Enables building netcore
+#ENABLE_NETCORE = 1

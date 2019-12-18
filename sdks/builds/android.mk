@@ -7,14 +7,24 @@ ANDROID_TOOLCHAIN_PREFIX?=$(ANDROID_TOOLCHAIN_DIR)/toolchains
 ANDROID_NEW_NDK=$(shell if test `grep 'Pkg\.Revision' $(ANDROID_TOOLCHAIN_DIR)/ndk/source.properties | cut -d '=' -f 2 | tr -d ' ' | cut -d '.' -f 1` -ge 18; then echo yes; else echo no; fi)
 
 android_SOURCES_DIR = $(TOP)/sdks/out/android-sources
+android_NETCORE_LIBS_DIR = $(TOP)/sdks/out/android-netcore_libs
 android_TPN_DIR = $(TOP)/sdks/out/android-tpn
 android_HOST_DARWIN_LIB_DIR = $(TOP)/sdks/out/android-host-Darwin-$(CONFIGURATION)/lib
 android_HOST_DARWIN_BIN_DIR = $(TOP)/sdks/out/android-host-Darwin-$(CONFIGURATION)/bin
+android_HOST_NETCORE_DARWIN_LIB_DIR = $(TOP)/sdks/out/android-host-netcore-Darwin-$(CONFIGURATION)/lib
+android_HOST_NETCORE_DARWIN_BIN_DIR = $(TOP)/sdks/out/android-host-netcore-Darwin-$(CONFIGURATION)/bin
 android_PLATFORM_BIN=$(XCODE_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/bin
 
+ifndef DISABLE_CLASSIC
 ifneq (,$(filter $(UNAME),Darwin Linux))
 android_ARCHIVE += android-sources android-tpn
 ADDITIONAL_PACKAGE_DEPS += $(android_SOURCES_DIR) $(android_TPN_DIR)
+endif
+endif
+
+ifdef ENABLE_NETCORE
+android_ARCHIVE += android-netcore_libs
+ADDITIONAL_PACKAGE_DEPS += $(android_NETCORE_LIBS_DIR)
 endif
 
 ifeq ($(UNAME),Darwin)
@@ -182,6 +192,7 @@ $$(eval $$(call RuntimeTemplateStub,android,$(1),$(4)))
 
 endef
 
+ifndef DISABLE_CLASSIC
 ## android-armeabi-v7a
 android-armeabi-v7a_CFLAGS=-D__POSIX_VISIBLE=201002 -DSK_RELEASE -DNDEBUG -UDEBUG -fpic -march=armv7-a -mtune=cortex-a8 -mfpu=vfp -mfloat-abi=softfp
 android-armeabi-v7a_CXXFLAGS=-D__POSIX_VISIBLE=201002 -DSK_RELEASE -DNDEBUG -UDEBUG -fpic -march=armv7-a -mtune=cortex-a8 -mfpu=vfp -mfloat-abi=softfp
@@ -215,6 +226,7 @@ ifeq ($(UNAME),Windows)
 $(eval $(call AndroidTargetTemplateStub,x86_64,x86_64,x86_64-linux-android,x86_64-linux-android))
 else
 $(eval $(call AndroidTargetTemplate,x86_64,x86_64,x86_64-linux-android,x86_64-linux-android))
+endif
 endif
 
 ##
@@ -258,14 +270,32 @@ _android-$(1)_CONFIGURE_FLAGS= \
 $$(eval $$(call RuntimeTemplate,android,$(1)))
 
 ifeq ($$(UNAME),Darwin)
+ifndef DISABLE_CLASSIC
 ADDITIONAL_PACKAGE_DEPS += $$(android_HOST_DARWIN_LIB_DIR)/.stamp-android-loader-path
+endif
+ifdef ENABLE_NETCORE
+ADDITIONAL_PACKAGE_DEPS += $$(android_HOST_NETCORE_DARWIN_LIB_DIR)/.stamp-android-loader-path
+endif
 endif
 
 endef
 
+# --- NETCORE ----
+android-host-netcore-Linux_CONFIGURE_FLAGS = --with-core=only
+android-host-netcore-Darwin_CONFIGURE_FLAGS = --with-core=only
+android-host-netcore-Windows_CONFIGURE_FLAGS = --with-core=only
+
+ifndef DISABLE_CLASSIC
 # on Windows, we use the AndroidHostMxeTemplate, instead
 ifneq ($(UNAME),Windows)
 $(eval $(call AndroidHostTemplate,host-$(UNAME)))
+endif
+endif
+
+ifdef ENABLE_NETCORE
+ifneq ($(UNAME),Windows)
+$(eval $(call AndroidHostTemplate,host-netcore-$(UNAME)))
+endif
 endif
 
 ##
@@ -326,6 +356,7 @@ $$(eval $$(call RuntimeTemplate,android,$(1),$(2)-w64-mingw32))
 
 endef
 
+ifndef DISABLE_CLASSIC
 ifneq ($(UNAME),Windows)
 $(eval $(call AndroidHostMxeTemplate,host-mxe-Win32,i686))
 $(eval $(call AndroidHostMxeTemplate,host-mxe-Win64,x86_64))
@@ -334,6 +365,7 @@ else
 # because 'gcc' is the cygwin or WSL compiler, while the x86_64-w64-mingw32-gcc is the windows native compiler.
 # TODO: build $(eval $(call AndroidHostMxeTemplate,host-mxe-Win64,x86_64))
 # TODO: also build $(eval $(call AndroidHostMxeTemplate,host-mxe-Win32,i686))
+endif
 endif
 
 ##
@@ -392,6 +424,7 @@ $$(eval $$(call CrossRuntimeTemplateStub,android,$(1),$$(if $$(filter $$(UNAME),
 
 endef
 
+ifndef DISABLE_CLASSIC
 ifeq ($(UNAME),Windows)
 $(eval $(call AndroidCrossTemplateStub,cross-arm,x86_64,armv7,armeabi-v7a,llvm-llvm64,armv7-none-linux-androideabi))
 $(eval $(call AndroidCrossTemplateStub,cross-arm64,x86_64,aarch64-v8a,arm64-v8a,llvm-llvm64,aarch64-v8a-linux-android))
@@ -402,6 +435,7 @@ $(eval $(call AndroidCrossTemplate,cross-arm,x86_64,armv7,armeabi-v7a,llvm-llvm6
 $(eval $(call AndroidCrossTemplate,cross-arm64,x86_64,aarch64-v8a,arm64-v8a,llvm-llvm64,aarch64-v8a-linux-android))
 $(eval $(call AndroidCrossTemplate,cross-x86,x86_64,i686,x86,llvm-llvm64,i686-none-linux-android))
 $(eval $(call AndroidCrossTemplate,cross-x86_64,x86_64,x86_64,x86_64,llvm-llvm64,x86_64-none-linux-android))
+endif
 endif
 
 ##
@@ -474,6 +508,7 @@ $$(eval $$(call CrossRuntimeTemplateStub,android,$(1),$(2)-w64-mingw32,$(3)-linu
 
 endef
 
+ifndef DISABLE_CLASSIC
 ifneq ($(UNAME),Windows)
 $(eval $(call AndroidCrossMXETemplate,cross-arm-win,x86_64,armv7,armeabi-v7a,llvm-llvmwin64,armv7-none-linux-androideabi))
 $(eval $(call AndroidCrossMXETemplate,cross-arm64-win,x86_64,aarch64-v8a,arm64-v8a,llvm-llvmwin64,aarch64-v8a-linux-android))
@@ -485,13 +520,16 @@ $(eval $(call AndroidCrossMXETemplateStub,cross-arm64-win,x86_64,aarch64-v8a,arm
 $(eval $(call AndroidCrossMXETemplateStub,cross-x86-win,x86_64,i686,x86,llvm-llvmwin64,i686-none-linux-android))
 $(eval $(call AndroidCrossMXETemplateStub,cross-x86_64-win,x86_64,x86_64,x86_64,llvm-llvmwin64,x86_64-none-linux-android))
 endif
+endif
 
 ifeq ($(UNAME),Windows)
 _bcl_android_BUILD_FLAGS += \
 	PROFILE_PLATFORM=win32
 endif
 
+ifndef DISABLE_CLASSIC
 $(eval $(call BclTemplate,android,monodroid monodroid_tools,monodroid monodroid_tools))
+endif
 
 $(android_SOURCES_DIR)/external/linker/README.md:  # we use this as a sentinel file to avoid rsyncing everything on each build (slows down iterating)
 	mkdir -p $(android_SOURCES_DIR)/external/linker
@@ -509,3 +547,25 @@ $(android_HOST_DARWIN_LIB_DIR)/.stamp-android-loader-path: package-android-host-
 	$(android_PLATFORM_BIN)/install_name_tool -id @loader_path/libmonosgen-2.0.dylib $(android_HOST_DARWIN_LIB_DIR)/libmonosgen-2.0.dylib
 	$(android_PLATFORM_BIN)/install_name_tool -change $(android_HOST_DARWIN_LIB_DIR)/libmonosgen-2.0.1.dylib @loader_path/libmonosgen-2.0.dylib $(android_HOST_DARWIN_BIN_DIR)/mono
 	touch $@
+
+$(android_HOST_NETCORE_DARWIN_LIB_DIR)/.stamp-android-loader-path: package-android-host-netcore-Darwin
+	$(android_PLATFORM_BIN)/install_name_tool -id @loader_path/libmonosgen-2.0.dylib $(android_HOST_NETCORE_DARWIN_LIB_DIR)/libmonosgen-2.0.dylib
+	$(android_PLATFORM_BIN)/install_name_tool -change $(android_HOST_NETCORE_DARWIN_LIB_DIR)/libmonosgen-2.0.1.dylib @loader_path/libmonosgen-2.0.dylib $(android_HOST_NETCORE_DARWIN_BIN_DIR)/mono
+	touch $@
+
+# FIXME: get the corefx stuff from a nuget ourselves and prepare everything.
+#
+# Right now we punt and just include the Versions.prop file which should have enough info to get the
+# dotnet SDK that we need.  See ../../netcore/Makefile patch-app target for
+# what to do after that. we neet to drop libmonosgen on top of libcoreclr and
+# drop our S.P.CoreLib in the right place.
+ifdef ENABLE_NETCORE
+$(android_NETCORE_LIBS_DIR): package-android-host-netcore-$(UNAME)
+	mkdir -p $(TOP)/sdks/out/android-netcore_libs/host-$(UNAME)/
+	cp $(TOP)/sdks/builds/android-host-netcore-$(UNAME)-$(CONFIGURATION)/netcore/config.make $(TOP)/netcore
+	$(MAKE) -C $(TOP)/netcore bcl
+	cp $(TOP)/netcore/System.Private.CoreLib/bin/x64/System.Private.CoreLib.dll $(TOP)/sdks/out/android-netcore_libs/host-$(UNAME)/
+	cp $(TOP)/netcore/System.Private.CoreLib/bin/x64/System.Private.CoreLib.pdb $(TOP)/sdks/out/android-netcore_libs/host-$(UNAME)/
+	mkdir -p $(TOP)/sdks/out/android-netcore_libs/eng/
+	cp $(TOP)/eng/Versions.props $(TOP)/sdks/out/android-netcore_libs/eng/Versions.props
+endif
