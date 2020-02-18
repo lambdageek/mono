@@ -32,6 +32,36 @@
 #include <sys/time.h>
 #endif
 
+#include "checked-build.h"
+#include "mono-threads-api.h"
+
+/* assert that there is no safepoint while we're holding an OS lock in the
+ * runtime.  The issue is if two threads in GC Unsafe mode try to take an OS
+ * lock.  The first thread will take the lock and then reach the safepoint and
+ * suspend.  The second thread will block, but the suspend initiator (the GC)
+ * will wait for it to reach a safepoint and the runtime will deadlock.
+ * If you take an OS lock in GC Unsafe mode, you must release it without reaching a safepoint.
+ */
+static inline void
+mono_check_no_safepoint_in_os_mutex_begin (const char *func)
+{
+#ifdef ENABLE_CHECKED_BUILD_THREAD
+	if (G_UNLIKELY (mono_check_mode_enabled (MONO_CHECK_MODE_THREAD))) {
+		mono_threads_enter_no_safepoints_region_if_unsafe (func);
+	}
+#endif
+}
+
+static inline void
+mono_check_no_safepoint_in_os_mutex_end (const char *func)
+{
+#ifdef ENABLE_CHECKED_BUILD_THREAD
+	if (G_UNLIKELY (mono_check_mode_enabled (MONO_CHECK_MODE_THREAD))) {
+		mono_threads_exit_no_safepoints_region_if_unsafe (func);
+	}
+#endif
+}
+
 #define MONO_INFINITE_WAIT ((guint32) 0xFFFFFFFF)
 
 #if !defined(HOST_WIN32)
@@ -105,6 +135,7 @@ mono_os_mutex_lock (mono_mutex_t *mutex)
 	res = pthread_mutex_lock (mutex);
 	if (G_UNLIKELY (res != 0))
 		g_error ("%s: pthread_mutex_lock failed with \"%s\" (%d)", __func__, g_strerror (res), res);
+	mono_check_no_safepoint_in_os_mutex_begin (__func__);
 }
 
 static inline int
@@ -116,6 +147,8 @@ mono_os_mutex_trylock (mono_mutex_t *mutex)
 	if (G_UNLIKELY (res != 0 && res != EBUSY))
 		g_error ("%s: pthread_mutex_trylock failed with \"%s\" (%d)", __func__, g_strerror (res), res);
 
+	if (res == 0)
+		mono_check_no_safepoint_in_os_mutex_begin (__func__);
 	return res != 0 ? -1 : 0;
 }
 
@@ -123,6 +156,8 @@ static inline void
 mono_os_mutex_unlock (mono_mutex_t *mutex)
 {
 	int res;
+
+	mono_check_no_safepoint_in_os_mutex_end (__func__);
 
 	res = pthread_mutex_unlock (mutex);
 	if (G_UNLIKELY (res != 0))
@@ -288,19 +323,24 @@ mono_os_mutex_lock (mono_mutex_t *mutex)
 	mutex->recursive ?
 		EnterCriticalSection (&mutex->critical_section) :
 		AcquireSRWLockExclusive (&mutex->srwlock);
+	mono_check_no_safepoint_in_os_mutex_begin ();
 }
 
 static inline int
 mono_os_mutex_trylock (mono_mutex_t *mutex)
 {
-	return (mutex->recursive ?
+	int res = (mutex->recursive ?
 		TryEnterCriticalSection (&mutex->critical_section) :
 		TryAcquireSRWLockExclusive (&mutex->srwlock)) ? 0 : -1;
+	if (res == 0)
+		mono_check_no_safepoint_in_os_mutex_begin ();
+	return res;
 }
 
 static inline void
 mono_os_mutex_unlock (mono_mutex_t *mutex)
 {
+	mono_check_no_safepoint_in_os_mutex_end ();
 	mutex->recursive ?
 		LeaveCriticalSection (&mutex->critical_section) :
 		ReleaseSRWLockExclusive (&mutex->srwlock);
