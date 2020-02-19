@@ -143,6 +143,15 @@ os_mutex_cookie (mono_mutex_t * mutex G_GNUC_UNUSED)
 }
 
 static inline void
+os_mutex_cookie_init (mono_mutex_t *mutex G_GNUC_UNUSED)
+{
+#ifndef ENABLE_CHECKED_BUILD_THREAD
+#else
+	mutex->cookie = 0;
+#endif
+}
+
+static inline void
 mono_os_mutex_init_type (mono_mutex_t *mutex, int type)
 {
 	int res;
@@ -170,6 +179,8 @@ mono_os_mutex_init_type (mono_mutex_t *mutex, int type)
 	res = pthread_mutexattr_destroy (&attr);
 	if (G_UNLIKELY (res != 0))
 		g_error ("%s: pthread_mutexattr_destroy failed with \"%s\" (%d)", __func__, g_strerror (res), res);
+
+	os_mutex_cookie_init (mutex);
 }
 
 static inline void
@@ -206,7 +217,7 @@ mono_os_mutex_lock (mono_mutex_t *mutex)
 }
 
 static inline int
-mono_os_mutex_trylock (mono_mutex_t *mutex)
+mono_os_mutex_trylock_internal (mono_mutex_t *mutex, gboolean enter_no_safepoints)
 {
 	int res;
 
@@ -214,21 +225,46 @@ mono_os_mutex_trylock (mono_mutex_t *mutex)
 	if (G_UNLIKELY (res != 0 && res != EBUSY))
 		g_error ("%s: pthread_mutex_trylock failed with \"%s\" (%d)", __func__, g_strerror (res), res);
 
-	if (res == 0)
+	if (res == 0 && enter_no_safepoints)
 		mono_check_no_safepoint_in_os_mutex_begin (__func__, os_mutex_cookie (mutex));
 	return res != 0 ? -1 : 0;
+}
+
+static inline int
+mono_os_mutex_trylock_from_coop (mono_mutex_t *mutex)
+{
+	return mono_os_mutex_trylock_internal (mutex, FALSE);
+}
+
+static inline int
+mono_os_mutex_trylock (mono_mutex_t *mutex)
+{
+	return mono_os_mutex_trylock_internal (mutex, TRUE);
+}
+
+static inline void
+mono_os_mutex_unlock_internal (mono_mutex_t *mutex, gboolean exit_no_safepoints)
+{
+	int res;
+
+	if (exit_no_safepoints)
+		mono_check_no_safepoint_in_os_mutex_end (__func__, os_mutex_cookie (mutex));
+
+	res = pthread_mutex_unlock (os_mutex_mutex (mutex));
+	if (G_UNLIKELY (res != 0))
+		g_error ("%s: pthread_mutex_unlock failed with \"%s\" (%d)", __func__, g_strerror (res), res);
+}
+
+static inline void
+mono_os_mutex_unlock_from_coop (mono_mutex_t *mutex)
+{
+	mono_os_mutex_unlock_internal (mutex, FALSE);
 }
 
 static inline void
 mono_os_mutex_unlock (mono_mutex_t *mutex)
 {
-	int res;
-
-	mono_check_no_safepoint_in_os_mutex_end (__func__, os_mutex_cookie (mutex));
-
-	res = pthread_mutex_unlock (os_mutex_mutex (mutex));
-	if (G_UNLIKELY (res != 0))
-		g_error ("%s: pthread_mutex_unlock failed with \"%s\" (%d)", __func__, g_strerror (res), res);
+	mono_os_mutex_unlock_internal (mutex, TRUE);
 }
 
 #else /* DISABLE_THREADS */
@@ -264,8 +300,19 @@ mono_os_mutex_trylock (mono_mutex_t *mutex)
 	return 0;
 }
 
+static inline int
+mono_os_mutex_trylock_from_coop (mono_mutex_t *mutex)
+{
+	return 0;
+}
+
 static inline void
 mono_os_mutex_unlock (mono_mutex_t *mutex)
+{
+}
+
+static inline void
+mono_os_mutex_unlock_from_coop (mono_mutex_t *mutex)
 {
 }
 
@@ -374,10 +421,20 @@ os_mutex_cookie (mono_mutex_t * mutex G_GNUC_UNUSED)
 
 
 static inline void
+os_mutex_cookie_init (mono_mutex_t *mutex G_GNUC_UNUSED)
+{
+#ifndef ENABLE_CHECKED_BUILD_THREAD
+#else
+	mutex->cookie = 0;
+#endif
+}
+
+static inline void
 mono_os_mutex_init (mono_mutex_t *mutex)
 {
 	mutex->recursive = FALSE;
 	InitializeSRWLock (&mutex->srwlock);
+	os_mutex_cookie_init (mutex);
 }
 
 static inline void
@@ -386,6 +443,7 @@ mono_os_mutex_init_recursive (mono_mutex_t *mutex)
 	mutex->recursive = TRUE;
 	const BOOL res = InitializeCriticalSectionEx (&mutex->critical_section, 0, CRITICAL_SECTION_NO_DEBUG_INFO);
 
+	os_mutex_cookie_init (mutex);
 }
 
 static inline void
@@ -406,23 +464,48 @@ mono_os_mutex_lock (mono_mutex_t *mutex)
 }
 
 static inline int
-mono_os_mutex_trylock (mono_mutex_t *mutex)
+mono_os_mutex_trylock_internal (mono_mutex_t *mutex, gboolean enter_no_safepoints)
 {
 	int res = (mutex->recursive ?
 		TryEnterCriticalSection (&mutex->critical_section) :
 		TryAcquireSRWLockExclusive (&mutex->srwlock)) ? 0 : -1;
-	if (res == 0)
+	if (res == 0 && enter_no_safepoints)
 		mono_check_no_safepoint_in_os_mutex_begin (__func__, os_mutex_cookie (mutex));
 	return res;
+}
+
+static inline int
+mono_os_mutex_trylock_from_coop (mono_mutex_t *mutex)
+{
+	return mono_os_mutex_trylock_internal (mutex, FALSE);
+}
+
+static inline int
+mono_os_mutex_trylock (mono_mutex_t *mutex)
+{
+	return mono_os_mutex_trylock_internal (mutex, TRUE);
+}
+
+static inline void
+mono_os_mutex_unlock_internal (mono_mutex_t *mutex, exit_no_safepoints)
+{
+	if (exit_no_safepoints)
+		mono_check_no_safepoint_in_os_mutex_end (__func__, os_mutex_cookie (mutex));
+	mutex->recursive ?
+		LeaveCriticalSection (&mutex->critical_section) :
+		ReleaseSRWLockExclusive (&mutex->srwlock);
+}
+
+static inline void
+mono_os_mutex_unlock_from_coop (mono_mutex_t *mutex)
+{
+	mono_os_mutex_unlock_internal (mutex, FALSE);
 }
 
 static inline void
 mono_os_mutex_unlock (mono_mutex_t *mutex)
 {
-	mono_check_no_safepoint_in_os_mutex_end (__func__, os_mutex_cookie (mutex));
-	mutex->recursive ?
-		LeaveCriticalSection (&mutex->critical_section) :
-		ReleaseSRWLockExclusive (&mutex->srwlock);
+	mono_os_mutex_unlock_internal (mutex, TRUE);
 }
 
 static inline void
