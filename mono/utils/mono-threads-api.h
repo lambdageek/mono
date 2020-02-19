@@ -139,7 +139,7 @@ mono_threads_enter_no_safepoints_region (const char *func);
 void
 mono_threads_exit_no_safepoints_region (const char *func);
 
-void
+int32_t
 mono_threads_enter_no_safepoints_region_if_unsafe (const char *func);
 
 void

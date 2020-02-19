@@ -761,11 +761,20 @@ mono_threads_enter_no_safepoints_region (const char *func)
 	mono_threads_transition_begin_no_safepoints (mono_thread_info_current (), func);
 }
 
-void
+int32_t
 mono_threads_enter_no_safepoints_region_if_unsafe (const char *func)
 {
-	if (mono_threads_is_runtime_startup_finished () && mono_thread_is_gc_unsafe_mode ())
-		mono_threads_transition_begin_no_safepoints (mono_thread_info_current (), func);
+	if (mono_threads_is_runtime_startup_finished () && mono_thread_is_gc_unsafe_mode ()) {
+		switch (mono_threads_transition_begin_no_safepoints_nested (mono_thread_info_current (), func)) {
+		case NoSafepointsNestedIgnored:
+			return 0;
+		case NoSafepointsNestedOk:
+			return 1;
+		default:
+			g_assert_not_reached ();
+		}
+	}
+	return 0;
 }
 
 void
