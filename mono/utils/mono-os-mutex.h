@@ -151,6 +151,27 @@ os_mutex_cookie_init (mono_mutex_t *mutex G_GNUC_UNUSED)
 #endif
 }
 
+static inline int32_t
+os_mutex_save_and_reinit_cookie (mono_mutex_t * mutex G_GNUC_UNUSED)
+{
+#ifndef ENABLE_CHECKED_BUILD_THREAD
+	return 0;
+#else
+	int32_t old_cookie = mutex->cookie;
+	mutex->cookie = 0;
+	return old_cookie;
+#endif
+}
+
+static inline void
+os_mutex_restore_cookie (mono_mutex_t * mutex G_GNUC_UNUSED, int32_t saved_cookie)
+{
+#ifndef ENABLE_CHECKED_BUILD_THREAD
+#else
+	mutex->cookie = saved_cookie;
+#endif
+}
+
 static inline void
 mono_os_mutex_init_type (mono_mutex_t *mutex, int type)
 {
@@ -365,7 +386,9 @@ mono_os_cond_wait (mono_cond_t *cond, mono_mutex_t *mutex)
 {
 	int res;
 
+	int32_t saved_cookie = os_mutex_save_and_reinit_cookie (mutex);
 	res = pthread_cond_wait (cond, os_mutex_mutex (mutex));
+	os_mutex_restore_cookie (mutex, saved_cookie);
 	if (G_UNLIKELY (res != 0))
 		g_error ("%s: pthread_cond_wait failed with \"%s\" (%d)", __func__, g_strerror (res), res);
 }
@@ -426,6 +449,27 @@ os_mutex_cookie_init (mono_mutex_t *mutex G_GNUC_UNUSED)
 #ifndef ENABLE_CHECKED_BUILD_THREAD
 #else
 	mutex->cookie = 0;
+#endif
+}
+
+static inline int32_t
+os_mutex_save_and_reinit_cookie (mono_mutex_t * mutex G_GNUC_UNUSED)
+{
+#ifndef ENABLE_CHECKED_BUILD_THREAD
+	return 0;
+#else
+	int32_t old_cookie = mutex->cookie;
+	mutex->cookie = 0;
+	return old_cookie;
+#endif
+}
+
+static inline void
+os_mutex_restore_cookie (mono_mutex_t * mutex G_GNUC_UNUSED, int32_t saved_cookie)
+{
+#ifndef ENABLE_CHECKED_BUILD_THREAD
+#else
+	mutex->cookie = saved_cookie;
 #endif
 }
 
@@ -523,23 +567,29 @@ mono_os_cond_destroy (mono_cond_t *cond)
 static inline void
 mono_os_cond_wait (mono_cond_t *cond, mono_mutex_t *mutex)
 {
+	int32_t saved_cookie = os_mutex_save_and_reinit_cookie (mutex);
 	const BOOL res = mutex->recursive ?
 		SleepConditionVariableCS (cond, &mutex->critical_section, INFINITE) :
 		SleepConditionVariableSRW (cond, &mutex->srwlock, INFINITE, 0);
 
 	if (G_UNLIKELY (res == 0))
 		g_error ("%s: SleepConditionVariable failed with error %d", __func__, GetLastError ());
+	if (res != 0)
+		os_mutex_restore_cookie (mutex, saved_cookie);
 }
 
 static inline int
 mono_os_cond_timedwait (mono_cond_t *cond, mono_mutex_t *mutex, guint32 timeout_ms)
 {
+	int32_t saved_cookie = os_mutex_save_and_reinit_cookie (mutex);
 	const BOOL res = mutex->recursive ?
 		SleepConditionVariableCS (cond, &mutex->critical_section, timeout_ms) :
 		SleepConditionVariableSRW (cond, &mutex->srwlock, timeout_ms, 0);
 
 	if (G_UNLIKELY (res == 0 && GetLastError () != ERROR_TIMEOUT))
 		g_error ("%s: SleepConditionVariable failed with error %d", __func__, GetLastError ());
+	if (res != 0)
+		os_mutex_restore_cookie (mutex, saved_cookie);
 
 	return res ? 0 : -1;
 }
