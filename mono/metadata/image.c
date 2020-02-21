@@ -3432,8 +3432,10 @@ mono_image_load_enc_delta (char *basename, char *dmeta, char *dil)
 	/* TODO: needs some kind of STW or lock */
 
 	/* TODO: bad assumption, can be a different assembly than the main one */
-	/* TODO: is it possible to find base image by GUID? */
-	// TODO, woot? mono_image_loaded_by_guid (const char *guid)
+	/*   is it possible to find base image by GUID?
+	 *   yeah, but doesn't exist in netcore:
+	 *   > mono_image_loaded_by_guid (const char *guid)
+	 */
 	MonoImage *image_base = mono_assembly_get_image_internal (mono_assembly_get_main ());
 	g_assert (!strcmp (mono_path_resolve_symlinks (basename), image_base->filename));
 
