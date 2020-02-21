@@ -6736,10 +6736,12 @@ ves_icall_Mono_Runtime_DumpStateTotal (guint64 *portable_hash, guint64 *unportab
 void
 ves_icall_Mono_Runtime_LoadMetadataUpdate (void)
 {
+	static int count = 0;
+	count++;
 	/* TODO: move that to the managed side and pass content of `.dmeta` and `.dil` as byte array */
 	char *basename = g_strdup ("here.exe");
-	char *dmeta = g_strconcat (g_strdup (basename), ".1.dmeta", NULL);
-	char *dil = g_strconcat (g_strdup (basename), ".1.dil", NULL);
+	char *dmeta = g_strdup_printf ("%s.%d.dmeta", basename, count);
+	char *dil = g_strdup_printf ("%s.%d.dil", basename, count);
 
 	mono_image_load_enc_delta (basename, dmeta, dil);
 }

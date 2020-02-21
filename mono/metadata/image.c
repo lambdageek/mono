@@ -3427,6 +3427,8 @@ mono_image_load_enc_delta (char *basename, char *dmeta, char *dil)
 {
 	int rows;
 
+	g_print ("LOADING basename=%s, dmeta=%s, dil=%s\n", basename, dmeta, dil);
+
 	/* TODO: needs some kind of STW or lock */
 
 	/* TODO: bad assumption, can be a different assembly than the main one */
