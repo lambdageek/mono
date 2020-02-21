@@ -586,6 +586,8 @@ struct _MonoImage {
 	/* Contains 1 based indexes */
 	GHashTable *weak_field_indexes;
 
+	GHashTable *delta_index; /* EnC index for method updates */
+
 	/*
 	 * No other runtime locks must be taken while holding this lock.
 	 * It's meant to be used only to mutate and query structures part of this image.
@@ -885,6 +887,9 @@ mono_install_image_loader (const MonoImageLoader *loader);
 
 void
 mono_image_append_class_to_reflection_info_set (MonoClass *klass);
+
+void
+mono_image_load_enc_delta (char *basename, char *dmeta, char *dil);
 
 gpointer
 mono_image_set_alloc  (MonoImageSet *set, guint size);

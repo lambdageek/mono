@@ -2025,7 +2025,7 @@ mono_method_get_header_internal (MonoMethod *method, MonoError *error)
 	int idx;
 	guint32 rva;
 	MonoImage* img;
-	gpointer loc;
+	gpointer loc = NULL;
 	MonoGenericContainer *container;
 
 	error_init (error);
@@ -2070,12 +2070,22 @@ mono_method_get_header_internal (MonoMethod *method, MonoError *error)
 	 */
 	g_assert (mono_metadata_token_table (method->token) == MONO_TABLE_METHOD);
 	idx = mono_metadata_token_index (method->token);
-	rva = mono_metadata_decode_row_col (&img->tables [MONO_TABLE_METHOD], idx - 1, MONO_METHOD_RVA);
 
-	if (!mono_verifier_verify_method_header (img, rva, error))
-		return NULL;
+	/* EnC case */
+	if (G_UNLIKELY (img->delta_index)) {
+		/* pre-computed rva pointer into delta IL image */
+		loc = g_hash_table_lookup (img->delta_index, GUINT_TO_POINTER (idx));
+	}
 
-	loc = mono_image_rva_map (img, rva);
+	if (!loc) {
+		rva = mono_metadata_decode_row_col (&img->tables [MONO_TABLE_METHOD], idx - 1, MONO_METHOD_RVA);
+
+		if (!mono_verifier_verify_method_header (img, rva, error))
+			return NULL;
+
+		loc = mono_image_rva_map (img, rva);
+	}
+
 	if (!loc) {
 		mono_error_set_bad_image (error, img, "Method has zero rva");
 		return NULL;

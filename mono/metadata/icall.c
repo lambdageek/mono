@@ -6733,6 +6733,17 @@ ves_icall_Mono_Runtime_DumpStateTotal (guint64 *portable_hash, guint64 *unportab
 	return result;
 }
 
+void
+ves_icall_Mono_Runtime_LoadMetadataUpdate (void)
+{
+	/* TODO: move that to the managed side and pass content of `.dmeta` and `.dil` as byte array */
+	char *basename = g_strdup ("here.exe");
+	char *dmeta = g_strconcat (g_strdup (basename), ".1.dmeta", NULL);
+	char *dil = g_strconcat (g_strdup (basename), ".1.dil", NULL);
+
+	mono_image_load_enc_delta (basename, dmeta, dil);
+}
+
 MonoBoolean
 ves_icall_System_Reflection_AssemblyName_ParseAssemblyName (const char *name, MonoAssemblyName *aname, MonoBoolean *is_version_defined_arg, MonoBoolean *is_token_defined_arg)
 {
