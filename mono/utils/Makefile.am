@@ -229,6 +229,8 @@ monoutils_sources = \
 	checked-build.c \
 	checked-build.h \
 	os-event.h \
+	mono-barrier.h	\
+	mono-barrier.c	\
 	refcount.h	\
 	w32api.h	\
 	unlocked.h	\
