@@ -57,6 +57,7 @@ libtestlib_la_SOURCES = \
 	test-memfuncs.c \
 	test-mono-linked-list-set.c \
 	test-conc-hashtable.c \
+	test-mono-barrier.c \
 	test-mono-handle.c \
 	test-mono-callspec.c \
 	test-mono-string.c \
@@ -83,6 +84,11 @@ test_conc_hashtable_SOURCES = main.c
 test_conc_hashtable_CFLAGS = $(test_cflags) -DMAIN=test_conc_hashtable_main
 test_conc_hashtable_LDADD = $(test_ldadd) libtestlib_la-test-conc-hashtable.lo
 test_conc_hashtable_LDFLAGS = $(test_ldflags)
+
+test_mono_barrier_SOURCES = main.c
+test_mono_barrier_CFLAGS = $(test_cflags) -DMAIN=test_mono_barrier_main
+test_mono_barrier_LDADD = $(test_ldadd) libtestlib_la-test-mono-barrier.lo
+test_mono_barrier_LDFLAGS = $(test_ldflags)
 
 test_mono_handle_SOURCES = main.c
 test_mono_handle_CFLAGS = $(test_cflags) -DMAIN=test_mono_handle_main
@@ -119,10 +125,12 @@ test_embed_invoke_DEPENDENCIES = test-embed-invoke-cs.exe
 
 
 check_PROGRAMS = test-sgen-qsort test-memfuncs test-mono-linked-list-set test-conc-hashtable test-mono-handle	\
+		 test-mono-barrier \
 		 test-path \
 		 test-mono-callspec test-mono-string test-mono-embed test-embed-invoke
 
 TESTS = test-sgen-qsort test-memfuncs test-mono-linked-list-set test-conc-hashtable test-mono-handle \
+	test-mono-barrier	\
 	test-path \
 	test-mono-callspec test-mono-string test-mono-embed test-embed-invoke
 
