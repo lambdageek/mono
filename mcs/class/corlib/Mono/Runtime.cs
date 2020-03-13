@@ -315,5 +315,13 @@ namespace Mono {
 				}
 			}
 		}
+
+		[MethodImplAttribute (MethodImplOptions.InternalCall)]
+		private static extern void LoadMetadataUpdate_internal ();
+
+		public static void LoadMetadataUpdate () {
+			LoadMetadataUpdate_internal ();
+		}
+		
 	}
 }

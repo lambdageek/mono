@@ -628,7 +628,7 @@ load_tables (MonoImage *image)
 			g_warning("bits in valid must be zero above 0x37 (II - 23.1.6)");
 		} else {
 			image->tables [table].rows = read32 (rows);
-			g_print ("found %s in image %s with rows = %d\n", mono_meta_table_name (table), image->assembly_name, image->tables [table].rows);
+			mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_ASSEMBLY, "found %s in image %s with rows = %d\n", mono_meta_table_name (table), image->assembly_name, image->tables [table].rows);
 		}
 		rows++;
 		valid++;
@@ -3417,31 +3417,68 @@ mono_image_append_class_to_reflection_info_set (MonoClass *klass)
 	mono_image_unlock (image);
 }
 
-/* TODO: remove those, they shouldn't be needed */
-extern MonoImage* mono_assembly_get_image_internal (MonoAssembly *assembly);
-extern char * mono_method_full_name (MonoMethod *method, gboolean signature);
-void mini_invalidate_transformed_interp_methods (MonoDomain *domain);
+static
+void
+mono_metadata_update_invoke_hook (MonoDomain *domain, MonoAssemblyLoadContext *alc, uint32_t generation)
+{
+	if (mono_get_runtime_callbacks ()->metadata_update_published)
+		mono_get_runtime_callbacks ()->metadata_update_published (domain, alc, generation);
+}
+
+static uint32_t update_published, update_alloc_frontier;
+
+uint32_t
+mono_metadata_update_prepare (MonoDomain *domain) {
+	/* TODO: take a lock? one updater at a time seems like a good invariant.
+	 * TODO: assert that the updater isn't depending on current metadata, else publishing might block.
+	 */
+	return ++update_alloc_frontier;
+}
+
+gboolean
+mono_metadata_update_available (void) {
+	return update_published < update_alloc_frontier;
+}
+
+gboolean
+mono_metadata_wait_for_update (uint32_t timeout_ms)
+{
+	/* TODO: give threads a way to voluntarily wait for an update to be published. */
+	g_assert_not_reached ();
+}
+
+void
+mono_metadata_update_publish (MonoDomain *domain, MonoAssemblyLoadContext *alc, uint32_t generation) {
+	g_assert (update_published < generation && generation <= update_alloc_frontier);
+	/* TODO: wait for all threads that are using old metadata to update. */
+	mono_metadata_update_invoke_hook (domain, alc, generation);
+}
+
 
 void
 mono_image_load_enc_delta (char *basename, char *dmeta, char *dil)
 {
+	MonoDomain *domain = mono_get_root_domain ();
 	int rows;
 
 	g_print ("LOADING basename=%s, dmeta=%s, dil=%s\n", basename, dmeta, dil);
 
 	/* TODO: needs some kind of STW or lock */
+	uint32_t generation = mono_metadata_update_prepare (domain);
 
 	/* TODO: bad assumption, can be a different assembly than the main one */
 	/*   is it possible to find base image by GUID?
 	 *   yeah, but doesn't exist in netcore:
 	 *   > mono_image_loaded_by_guid (const char *guid)
 	 */
-	MonoImage *image_base = mono_assembly_get_image_internal (mono_assembly_get_main ());
+	MonoImage *image_base = mono_assembly_get_main ()->image;
+	MonoAssemblyLoadContext *alc = mono_image_get_alc (image_base);
 	g_assert (!strcmp (mono_path_resolve_symlinks (basename), image_base->filename));
 
+	
 	MonoImageOpenStatus status;
 	/* TODO: helper? */
-	MonoImage *image_dmeta = do_mono_image_open (image_base->alc, dmeta, &status, TRUE, TRUE, FALSE, TRUE /*FALSE */, TRUE);
+	MonoImage *image_dmeta = do_mono_image_open (alc, dmeta, &status, TRUE, TRUE, FALSE, TRUE /*FALSE */, TRUE);
 	// return do_mono_image_open (alc, fname, status, TRUE, TRUE, FALSE, TRUE, FALSE);
 
 	g_print ("base  guid: %s\n", image_base->guid);
@@ -3458,7 +3495,7 @@ mono_image_load_enc_delta (char *basename, char *dmeta, char *dil)
 		ERROR_DECL (error);
 		int token = MONO_TOKEN_METHOD_DEF | i;
 		MonoMethod *method = mono_get_method_checked (image_base, token, NULL, NULL, error);
-		g_print ("base  method %d (token=0x%08x): %s\n", i, token, mono_method_full_name (method, TRUE));
+		g_print ("base  method %d (token=0x%08x): %s\n", i, token, mono_method_get_name_full (method, TRUE, TRUE, MONO_TYPE_NAME_FORMAT_IL));
 	}
 
 	for (int i = 0; i < 0x10; i++) g_print ("==");
@@ -3523,9 +3560,7 @@ mono_image_load_enc_delta (char *basename, char *dmeta, char *dil)
 		g_hash_table_insert (image_base->delta_index, GUINT_TO_POINTER (token_idx), (gpointer) (il_delta + rva));
 	}
 
-	/* TODO: add proper callback that can invalidate a specific method */
-	/* TODO: fix domain */
-	mini_invalidate_transformed_interp_methods (mono_get_root_domain ());
+	mono_metadata_update_publish (domain, alc, generation);
 
 	g_print (">>> EnC delta applied\n");
 	fflush (stdout);

@@ -4373,9 +4373,3 @@ mini_get_cpu_features (MonoCompile* cfg)
 	// apply parameters passed via -mattr
 	return (features | mono_cpu_features_enabled) & ~mono_cpu_features_disabled;
 }
-
-void
-mini_invalidate_transformed_interp_methods (MonoDomain *domain)
-{
-	mini_get_interp_callbacks ()->invalidate_transformed (domain);
-}
