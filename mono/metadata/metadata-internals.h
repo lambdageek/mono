@@ -889,7 +889,7 @@ void
 mono_image_append_class_to_reflection_info_set (MonoClass *klass);
 
 void
-mono_image_load_enc_delta (char *basename, char *dmeta, char *dil);
+mono_image_load_enc_delta (MonoDomain *domain, MonoImage *base_image, char *basename, char *dmeta, char *dil);
 
 gpointer
 mono_image_set_alloc  (MonoImageSet *set, guint size);
@@ -1323,17 +1323,5 @@ mono_type_get_array_type_internal (MonoType *type)
 {
 	return type->data.array;
 }
-
-gboolean
-mono_metadata_update_available (void);
-	
-gboolean
-mono_metadata_wait_for_update (uint32_t timeout_ms);
-
-uint32_t
-mono_metadata_update_prepare (MonoDomain *domain);
-
-void
-mono_metadata_update_publish (MonoDomain *domain, MonoAssemblyLoadContext *alc, uint32_t generation);
 
 #endif /* __MONO_METADATA_INTERNALS_H__ */

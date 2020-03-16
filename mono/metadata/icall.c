@@ -6743,7 +6743,11 @@ ves_icall_Mono_Runtime_LoadMetadataUpdate (void)
 	char *dmeta = g_strdup_printf ("%s.%d.dmeta", basename, count);
 	char *dil = g_strdup_printf ("%s.%d.dil", basename, count);
 
-	mono_image_load_enc_delta (basename, dmeta, dil);
+	MonoDomain *domain = mono_domain_get ();
+	/* FIXME: some other image */
+	MonoImage *image_base = mono_assembly_get_main ()->image;
+
+	mono_image_load_enc_delta (domain, image_base, basename, dmeta, dil);
 }
 
 MonoBoolean
