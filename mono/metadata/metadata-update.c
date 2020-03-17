@@ -89,6 +89,14 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *base
 	const char *dmeta_mvid = mono_guid_to_string ((guint8 *) mono_metadata_guid_heap (image_dmeta, module_cols [MONO_MODULE_MVID]));
 	g_print ("dmeta guid: %s\n", dmeta_mvid);
 
+	g_print ("dmeta tables:\n");
+	for (int idx = 0; idx < MONO_TABLE_NUM; ++idx) {
+		if (image_dmeta->tables [idx].base) {
+			g_print ("\t%x \"%s\"\n", idx, mono_meta_table_name (idx));
+		}
+	}
+
+
 	rows = mono_image_get_table_rows (image_base, MONO_TABLE_METHOD);
 	for (int i = 1; i <= rows ; ++i) {
 		ERROR_DECL (error);
