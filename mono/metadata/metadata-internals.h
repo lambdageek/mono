@@ -889,7 +889,7 @@ void
 mono_image_append_class_to_reflection_info_set (MonoClass *klass);
 
 void
-mono_image_load_enc_delta (MonoDomain *domain, MonoImage *base_image, char *basename, char *dmeta, char *dil);
+mono_image_load_enc_delta (MonoDomain *domain, MonoImage *base_image, char *basename, const char *dmeta_path, gconstpointer dmeta, uint32_t dmeta_len, const char *dil_path);
 
 gpointer
 mono_image_set_alloc  (MonoImageSet *set, guint size);

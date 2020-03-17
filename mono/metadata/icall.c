@@ -6734,20 +6734,32 @@ ves_icall_Mono_Runtime_DumpStateTotal (guint64 *portable_hash, guint64 *unportab
 }
 
 void
-ves_icall_Mono_Runtime_LoadMetadataUpdate (void)
+ves_icall_Mono_Runtime_LoadMetadataUpdate (MonoStringHandle basename_str, MonoStringHandle dmeta_path_str, MonoStringHandle dil_path_str,
+					   gconstpointer dmeta_bytes, int32_t dmeta_len,
+					   MonoError *error)
 {
-	static int count = 0;
-	count++;
+	g_assert (dmeta_len >= 0);
 	/* TODO: move that to the managed side and pass content of `.dmeta` and `.dil` as byte array */
-	char *basename = g_strdup ("here.exe");
-	char *dmeta = g_strdup_printf ("%s.%d.dmeta", basename, count);
-	char *dil = g_strdup_printf ("%s.%d.dil", basename, count);
+	char *basename = NULL;
+	char *dmeta_path = NULL;
+	char *dil_path = NULL;
+	basename = mono_string_handle_to_utf8 (basename_str, error);
+	goto_if_nok (error, leave);
+	dmeta_path = mono_string_handle_to_utf8 (dmeta_path_str, error);
+	goto_if_nok (error, leave);
+	dil_path = mono_string_handle_to_utf8 (dil_path_str, error);
+	goto_if_nok (error, leave);
 
 	MonoDomain *domain = mono_domain_get ();
 	/* FIXME: some other image */
 	MonoImage *image_base = mono_assembly_get_main ()->image;
 
-	mono_image_load_enc_delta (domain, image_base, basename, dmeta, dil);
+	mono_image_load_enc_delta (domain, image_base, basename, dmeta_path, dmeta_bytes, dmeta_len, dil_path);
+
+leave:
+	g_free (dil_path);
+	g_free (dmeta_path);
+	g_free (basename);
 }
 
 MonoBoolean

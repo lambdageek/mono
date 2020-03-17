@@ -52,13 +52,17 @@ mono_metadata_update_publish (MonoDomain *domain, MonoAssemblyLoadContext *alc, 
 	mono_metadata_update_invoke_hook (domain, alc, generation);
 }
 
+typedef struct _MonoDilFile {
+	MonoFileMap *filed;
+	gpointer handle;
+} MonoDilFile;
 
 void
-mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *basename, char *dmeta, char *dil)
+mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *basename, const char *dmeta_name, gconstpointer dmeta_bytes, uint32_t dmeta_len, const char *dil_path)
 {
 	int rows;
 
-	g_print ("LOADING basename=%s, dmeta=%s, dil=%s\n", basename, dmeta, dil);
+	g_print ("LOADING basename=%s, dmeta=%s, dil=%s\n", basename, dmeta_name, dil_path);
 
 	/* TODO: needs some kind of STW or lock */
 	uint32_t generation = mono_metadata_update_prepare (domain);
@@ -74,7 +78,7 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *base
 
 	MonoImageOpenStatus status;
 	/* TODO: helper? */
-	MonoImage *image_dmeta = mono_image_open_metadata_only (alc, dmeta, &status);
+	MonoImage *image_dmeta = mono_image_open_from_data_internal (alc, (char*)dmeta_bytes, dmeta_len, TRUE, &status, FALSE, TRUE, dmeta_name, dmeta_name);
 
 	g_print ("base  guid: %s\n", image_base->guid);
 
@@ -121,15 +125,16 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *base
 	g_print ("\n");
 
 
-	MonoFileMap *il_delta_filed = mono_file_map_open (dil);
-	g_assert (il_delta_filed);
-	gpointer handle;
+	MonoDilFile *dil = g_new0 (MonoDilFile, 1);
+
+	dil->filed = mono_file_map_open (dil_path);
+	g_assert (dil->filed);
 	char *il_delta = (char *) mono_file_map_fileio (
-			mono_file_map_size (il_delta_filed),
+			mono_file_map_size (dil->filed),
 			MONO_MMAP_READ | MONO_MMAP_PRIVATE,
-			mono_file_map_fd (il_delta_filed),
+			mono_file_map_fd (dil->filed),
 			0,
-			&handle);
+			&dil->handle);
 	/* TODO: extend existing heaps of base image */
 
 	MonoTableInfo *table_enclog = &image_dmeta->tables [MONO_TABLE_ENCLOG];
@@ -159,4 +164,6 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *base
 
 	g_print (">>> EnC delta applied\n");
 	fflush (stdout);
+
+	/* FIXME: leaking dil */
 }

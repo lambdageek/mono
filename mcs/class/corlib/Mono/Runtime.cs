@@ -317,10 +317,22 @@ namespace Mono {
 		}
 
 		[MethodImplAttribute (MethodImplOptions.InternalCall)]
-		private static extern void LoadMetadataUpdate_internal ();
+		private static unsafe extern void LoadMetadataUpdate_internal (string basename, string dmeta_path, string dil_path, byte* dmeta_bytes, int dmeta_length);
+
+		private static int count;
 
 		public static void LoadMetadataUpdate () {
-			LoadMetadataUpdate_internal ();
+			count++;
+			string basename = "here.exe";
+			string dmeta_name = $"{basename}.{count}.dmeta";
+			string dil_name = $"{basename}.{count}.dil";
+
+			byte[] dmeta = System.IO.File.ReadAllBytes (dmeta_name);
+			unsafe {
+				fixed (byte* dmeta_bytes = dmeta) {
+				       LoadMetadataUpdate_internal (basename, dmeta_name, dil_name, dmeta_bytes, dmeta.Length);
+				}
+			}
 		}
 		
 	}
