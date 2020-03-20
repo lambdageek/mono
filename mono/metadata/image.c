@@ -24,6 +24,7 @@
 #include "tabledefs.h"
 #include "tokentype.h"
 #include "metadata-internals.h"
+#include "metadata-update.h"
 #include "profiler-private.h"
 #include "loader.h"
 #include "marshal.h"
@@ -2505,6 +2506,18 @@ mono_image_close_except_pools_all (MonoImage**images, int image_count)
 	}
 }
 
+static void
+mono_image_close_except_pools_all_list (GSList *images)
+{
+	for (GSList *ptr = images; ptr; ptr = ptr->next) {
+		MonoImage *image = (MonoImage *)ptr->data;
+		if (image) {
+			if (!mono_image_close_except_pools (image))
+			    ptr->data = NULL;
+		}
+	}
+}
+
 /*
  * Returns whether mono_image_close_finish() must be called as well.
  * We must unload images in two steps because clearing the domain in
@@ -2671,6 +2684,14 @@ mono_image_close_except_pools (MonoImage *image)
 	mono_image_close_except_pools_all (image->modules, image->module_count);
 	g_free (image->modules_loaded);
 
+	if (image->delta_image)
+		mono_image_close_except_pools_all_list (image->delta_image);
+
+	if (image->delta_il) {
+		mono_dil_file_close (image->delta_il);
+		mono_dil_file_destroy (image->delta_il);
+	}
+
 	mono_os_mutex_destroy (&image->szarray_cache_lock);
 	mono_os_mutex_destroy (&image->lock);
 
@@ -2697,6 +2718,18 @@ mono_image_close_all (MonoImage**images, int image_count)
 		g_free (images);
 }
 
+static void
+mono_image_close_all_list (GSList *images)
+{
+	for (GSList *ptr = images; ptr; ptr = ptr->next) {
+		MonoImage *image = (MonoImage *)ptr->data;
+		if (image)
+			mono_image_close_finish (image);
+	}
+
+	g_slist_free (images);
+}
+
 void
 mono_image_close_finish (MonoImage *image)
 {
@@ -2714,6 +2747,8 @@ mono_image_close_finish (MonoImage *image)
 
 	mono_image_close_all (image->files, image->file_count);
 	mono_image_close_all (image->modules, image->module_count);
+
+	mono_image_close_all_list (image->delta_image);
 
 #ifndef DISABLE_PERFCOUNTERS
 	/* FIXME: use an explicit subtraction method as soon as it's available */

@@ -7,6 +7,7 @@
 
 #include "mono/utils/mono-forward.h"
 #include "mono/metadata/loader-internals.h"
+#include "mono/metadata/metadata-internals.h"
 
 gboolean
 mono_metadata_update_available (void);
@@ -19,6 +20,13 @@ mono_metadata_update_prepare (MonoDomain *domain);
 
 void
 mono_metadata_update_publish (MonoDomain *domain, MonoAssemblyLoadContext *alc, uint32_t generation);
+
+
+void
+mono_dil_file_close (MonoDilFile *dil);
+
+void
+mono_dil_file_destroy (MonoDilFile *dil);
 
 
 #endif /*__MONO_METADATA_UPDATE_H__*/

@@ -347,6 +347,8 @@ typedef struct {
 #endif
 } MonoImageStorage;
 
+typedef struct _MonoDilFile MonoDilFile;
+
 struct _MonoImage {
 	/*
 	 * This count is incremented during these situations:
@@ -587,6 +589,17 @@ struct _MonoImage {
 	GHashTable *weak_field_indexes;
 
 	GHashTable *delta_index; /* EnC index for method updates */
+
+	/* List of MonoImages of deltas.  Parent image owns 1 refcount ref of the delta image */
+	GSList *delta_image;
+	/* Tail of delta_image for fast appends */
+	GSList *delta_image_last;
+
+	/* Metadata delta images only */
+	uint32_t generation;
+	/* Metadata delta images only. This is the corresponding IL file */
+	MonoDilFile *delta_il;
+
 
 	/*
 	 * No other runtime locks must be taken while holding this lock.

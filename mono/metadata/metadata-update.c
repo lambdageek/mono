@@ -52,10 +52,11 @@ mono_metadata_update_publish (MonoDomain *domain, MonoAssemblyLoadContext *alc, 
 	mono_metadata_update_invoke_hook (domain, alc, generation);
 }
 
-typedef struct _MonoDilFile {
+struct _MonoDilFile {
 	MonoFileMap *filed;
 	gpointer handle;
-} MonoDilFile;
+	char *il;
+};
 
 void
 mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *basename, const char *dmeta_name, gconstpointer dmeta_bytes, uint32_t dmeta_len, const char *dil_path)
