@@ -6739,7 +6739,6 @@ ves_icall_Mono_Runtime_LoadMetadataUpdate (MonoStringHandle basename_str, MonoSt
 					   MonoError *error)
 {
 	g_assert (dmeta_len >= 0);
-	/* TODO: move that to the managed side and pass content of `.dmeta` and `.dil` as byte array */
 	char *basename = NULL;
 	char *dmeta_path = NULL;
 	char *dil_path = NULL;
@@ -6752,6 +6751,9 @@ ves_icall_Mono_Runtime_LoadMetadataUpdate (MonoStringHandle basename_str, MonoSt
 
 	MonoDomain *domain = mono_domain_get ();
 	/* FIXME: some other image */
+	/* FIXME: instead of basename_str as a string, take a MonoReflectionAssembly argument and get the image from
+	 * there.
+	 */
 	MonoImage *image_base = mono_assembly_get_main ()->image;
 
 	mono_image_load_enc_delta (domain, image_base, basename, dmeta_path, dmeta_bytes, dmeta_len, dil_path);

@@ -13,7 +13,24 @@
 #include "mono/metadata/metadata-update.h"
 #include "mono/metadata/object-internals.h"
 #include "mono/metadata/tokentype.h"
+#include "mono/utils/mono-logger-internals.h"
 #include "mono/utils/mono-path.h"
+
+#if 1
+#define UPDATE_DEBUG(stmt) do { stmt; } while (0)
+#else
+#define UPDATE_DEBUG(stmt) /*empty */
+#endif
+
+MonoImage*
+mono_image_open_dmeta_from_data (MonoImage *base_image, uint32_t generation, const char *dmeta_name, gconstpointer dmeta_bytes, uint32_t dmeta_len, MonoImageOpenStatus *status);
+
+MonoDilFile *
+mono_dil_file_open (const char *dil_path);
+
+void
+mono_image_append_delta (MonoImage *base, MonoImage *delta);
+
 
 static
 void
@@ -59,41 +76,68 @@ struct _MonoDilFile {
 };
 
 void
-mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *basename, const char *dmeta_name, gconstpointer dmeta_bytes, uint32_t dmeta_len, const char *dil_path)
+mono_image_append_delta (MonoImage *base, MonoImage *delta)
+{
+	/* FIXME: needs locking. Assumes one updater at a time */
+	if (!base->delta_image) {
+		base->delta_image = base->delta_image_last = g_slist_prepend (NULL, delta);
+		return;
+	}
+	g_assert (((MonoImage*)base->delta_image_last->data)->generation < delta->generation);
+	base->delta_image_last = g_slist_append (base->delta_image_last, delta);
+}
+
+MonoImage*
+mono_image_open_dmeta_from_data (MonoImage *base_image, uint32_t generation, const char *dmeta_name, gconstpointer dmeta_bytes, uint32_t dmeta_len, MonoImageOpenStatus *status)
+{
+	MonoAssemblyLoadContext *alc = mono_image_get_alc (base_image);
+	MonoImage *dmeta_image = mono_image_open_from_data_internal (alc, (char*)dmeta_bytes, dmeta_len, TRUE, status, FALSE, TRUE, dmeta_name, dmeta_name);
+
+	dmeta_image->generation = generation;
+
+	/* base_image takes ownership of 1 refcount ref of dmeta_image */
+	mono_image_append_delta (base_image, dmeta_image);
+
+	return dmeta_image;
+}
+
+MonoDilFile *
+mono_dil_file_open (const char *dil_path)
+{
+	MonoDilFile *dil = g_new0 (MonoDilFile, 1);
+
+	dil->filed = mono_file_map_open (dil_path);
+	g_assert (dil->filed);
+	dil->il = (char *) mono_file_map_fileio (
+			mono_file_map_size (dil->filed),
+			MONO_MMAP_READ | MONO_MMAP_PRIVATE,
+			mono_file_map_fd (dil->filed),
+			0,
+			&dil->handle);
+	return dil;
+}
+
+void
+mono_dil_file_close (MonoDilFile *dil)
+{
+	mono_file_map_close (dil->filed);
+}
+
+void
+mono_dil_file_destroy (MonoDilFile *dil)
+{
+	g_free (dil);
+}
+
+static void
+dump_update_summary (MonoImage *image_base, MonoImage *image_dmeta)
 {
 	int rows;
 
-	g_print ("LOADING basename=%s, dmeta=%s, dil=%s\n", basename, dmeta_name, dil_path);
-
-	/* TODO: needs some kind of STW or lock */
-	uint32_t generation = mono_metadata_update_prepare (domain);
-
-	/* TODO: bad assumption, can be a different assembly than the main one */
-	/*   is it possible to find base image by GUID?
-	 *   yeah, but doesn't exist in netcore:
-	 *   > mono_image_loaded_by_guid (const char *guid)
-	 */
-	MonoAssemblyLoadContext *alc = mono_image_get_alc (image_base);
-	g_assert (!strcmp (mono_path_resolve_symlinks (basename), image_base->filename));
-
-
-	MonoImageOpenStatus status;
-	/* TODO: helper? */
-	MonoImage *image_dmeta = mono_image_open_from_data_internal (alc, (char*)dmeta_bytes, dmeta_len, TRUE, &status, FALSE, TRUE, dmeta_name, dmeta_name);
-
-	g_print ("base  guid: %s\n", image_base->guid);
-
-	guint32 module_cols [MONO_MODULE_SIZE];
-	/* TODO: why is image_dmeta->guid not initialized? */
-	mono_metadata_decode_row (&image_dmeta->tables [MONO_TABLE_MODULE], 0, module_cols, MONO_MODULE_SIZE);
-	g_print ("module_cols [MONO_MODULE_MVID]: %d\n", module_cols [MONO_MODULE_MVID]);
-	const char *dmeta_mvid = mono_guid_to_string ((guint8 *) mono_metadata_guid_heap (image_dmeta, module_cols [MONO_MODULE_MVID]));
-	g_print ("dmeta guid: %s\n", dmeta_mvid);
-
-	g_print ("dmeta tables:\n");
+	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "dmeta tables:");
 	for (int idx = 0; idx < MONO_TABLE_NUM; ++idx) {
 		if (image_dmeta->tables [idx].base) {
-			g_print ("\t%x \"%s\"\n", idx, mono_meta_table_name (idx));
+			mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "\t%x \"%s\"", idx, mono_meta_table_name (idx));
 		}
 	}
 
@@ -103,11 +147,11 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *base
 		ERROR_DECL (error);
 		int token = MONO_TOKEN_METHOD_DEF | i;
 		MonoMethod *method = mono_get_method_checked (image_base, token, NULL, NULL, error);
-		g_print ("base  method %d (token=0x%08x): %s\n", i, token, mono_method_get_name_full (method, TRUE, TRUE, MONO_TYPE_NAME_FORMAT_IL));
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base  method %d (token=0x%08x): %s", i, token, mono_method_get_name_full (method, TRUE, TRUE, MONO_TYPE_NAME_FORMAT_IL));
 	}
 
-	for (int i = 0; i < 0x10; i++) g_print ("==");
-	g_print ("\n");
+	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "================================");
+
 
 	rows = mono_image_get_table_rows (image_base, MONO_TABLE_METHOD);
 	for (int i = 1; i <= rows ; ++i) {
@@ -115,11 +159,10 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *base
 		mono_metadata_decode_row (&image_base->tables [MONO_TABLE_METHOD], i - 1, cols, MONO_METHOD_SIZE);
 		const char *name = mono_metadata_string_heap (image_base, cols [MONO_METHOD_NAME]);
 		guint32 rva = cols [MONO_METHOD_RVA];
-		g_print ("base  method i=%d, rva=%d/0x%04x, name=%s\n", i, rva, rva, name);
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base  method i=%d, rva=%d/0x%04x, name=%s\n", i, rva, rva, name);
 	}
 
-	for (int i = 0; i < 0x10; i++) g_print ("==");
-	g_print ("\n");
+	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "================================");
 
 	rows = mono_image_get_table_rows (image_dmeta, MONO_TABLE_METHOD);
 	for (int i = 1; i <= rows ; ++i) {
@@ -127,23 +170,39 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *base
 		mono_metadata_decode_row (&image_dmeta->tables [MONO_TABLE_METHOD], i - 1, cols, MONO_METHOD_SIZE);
 		const char *name = mono_metadata_string_heap (image_dmeta, cols [MONO_METHOD_NAME]);
 		guint32 rva = cols [MONO_METHOD_RVA];
-		g_print ("dmeta method i=%d, rva=%d/0x%04x, name=%s\n", i, rva, rva, name);
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "dmeta method i=%d, rva=%d/0x%04x, name=%s", i, rva, rva, name);
 	}
 
-	for (int i = 0; i < 0x10; i++) g_print ("==");
-	g_print ("\n");
+	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "================================");
+}
+
+void
+mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *basename, const char *dmeta_name, gconstpointer dmeta_bytes, uint32_t dmeta_len, const char *dil_path)
+{
+	int rows;
+
+	mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "LOADING basename=%s, dmeta=%s, dil=%s", basename, dmeta_name, dil_path);
+
+	/* TODO: needs some kind of STW or lock */
+	uint32_t generation = mono_metadata_update_prepare (domain);
+
+	g_assert (!strcmp (mono_path_resolve_symlinks (basename), image_base->filename));
 
 
-	MonoDilFile *dil = g_new0 (MonoDilFile, 1);
+	MonoImageOpenStatus status;
+	MonoImage *image_dmeta = mono_image_open_dmeta_from_data (image_base, generation, dmeta_name, dmeta_bytes, dmeta_len, &status);
+	g_assert (image_dmeta);
+	g_assert (status == MONO_IMAGE_OK);
 
-	dil->filed = mono_file_map_open (dil_path);
-	g_assert (dil->filed);
-	char *il_delta = (char *) mono_file_map_fileio (
-			mono_file_map_size (dil->filed),
-			MONO_MMAP_READ | MONO_MMAP_PRIVATE,
-			mono_file_map_fd (dil->filed),
-			0,
-			&dil->handle);
+	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base  guid: %s", image_base->guid);
+	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "dmeta guid: %s", image_dmeta->guid);
+
+	if (mono_trace_is_traced (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE)) {
+		dump_update_summary (image_base, image_dmeta);
+	}
+
+	MonoDilFile *dil = mono_dil_file_open (dil_path);
+	image_dmeta->delta_il = dil;
 	/* TODO: extend existing heaps of base image */
 
 	MonoTableInfo *table_enclog = &image_dmeta->tables [MONO_TABLE_ENCLOG];
@@ -155,7 +214,7 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *base
 		int func_code = cols [MONO_ENCLOG_FUNC_CODE];
 		g_assertf (func_code == 0, "EnC: FuncCode Default (0) is supported only, but provided: %d (token=0x%08x)", func_code, log_token);
 		int table_index = mono_metadata_token_table (log_token);
-		g_print ("enclog i=%d: token=0x%08x (table=%s): %d\n", i, log_token, mono_meta_table_name (table_index), func_code);
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "enclog i=%d: token=0x%08x (table=%s): %d", i, log_token, mono_meta_table_name (table_index), func_code);
 
 		if (table_index != MONO_TABLE_METHOD)
 			continue;
@@ -166,13 +225,11 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *base
 		int token_idx = mono_metadata_token_index (log_token);
 		int rva = mono_metadata_decode_row_col (&image_dmeta->tables [MONO_TABLE_METHOD], token_idx - 1, MONO_METHOD_RVA);
 
-		g_hash_table_insert (image_base->delta_index, GUINT_TO_POINTER (token_idx), (gpointer) (il_delta + rva));
+		g_hash_table_insert (image_base->delta_index, GUINT_TO_POINTER (token_idx), (gpointer) (dil->il + rva));
 	}
 
+	MonoAssemblyLoadContext *alc = mono_image_get_alc (image_base);
 	mono_metadata_update_publish (domain, alc, generation);
 
-	g_print (">>> EnC delta applied\n");
-	fflush (stdout);
-
-	/* FIXME: leaking dil */
+	mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, ">>> EnC delta %s (generation %d) applied", dmeta_name, generation);
 }
