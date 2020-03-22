@@ -25,8 +25,10 @@ void
 mono_metadata_update_publish (MonoDomain *domain, MonoAssemblyLoadContext *alc, uint32_t generation);
 
 void
-mono_metadata_update_cleanup_on_close (MonoImage *base_image);
+mono_metadata_update_cancel (uint32_t generation);
 
+void
+mono_metadata_update_cleanup_on_close (MonoImage *base_image);
 
 void
 mono_dil_file_close (MonoDilFile *dil);
