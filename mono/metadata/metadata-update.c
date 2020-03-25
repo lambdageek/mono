@@ -177,17 +177,16 @@ dump_update_summary (MonoImage *image_base, MonoImage *image_dmeta)
 }
 
 void
-mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, char *basename, const char *dmeta_name, gconstpointer dmeta_bytes, uint32_t dmeta_len, const char *dil_path)
+mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, const char *dmeta_name, gconstpointer dmeta_bytes, uint32_t dmeta_len, const char *dil_path)
 {
 	int rows;
+
+	const char *basename = image_base->filename;
 
 	mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "LOADING basename=%s, dmeta=%s, dil=%s", basename, dmeta_name, dil_path);
 
 	/* TODO: needs some kind of STW or lock */
 	uint32_t generation = mono_metadata_update_prepare (domain);
-
-	g_assert (!strcmp (mono_path_resolve_symlinks (basename), image_base->filename));
-
 
 	MonoImageOpenStatus status;
 	MonoImage *image_dmeta = mono_image_open_dmeta_from_data (image_base, generation, dmeta_name, dmeta_bytes, dmeta_len, &status);
