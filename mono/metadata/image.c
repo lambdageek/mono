@@ -46,6 +46,7 @@
 #include <mono/metadata/verify.h>
 #include <mono/metadata/image-internals.h>
 #include <mono/metadata/loaded-images-internals.h>
+#include <mono/metadata/metadata-update.h>
 #include <mono/metadata/w32process-internals.h>
 #include <mono/metadata/debug-internals.h>
 #include <mono/metadata/mono-private-unstable.h>
@@ -2573,6 +2574,8 @@ mono_image_close_except_pools (MonoImage *image)
 	mono_image_invoke_unload_hook (image);
 
 	mono_metadata_clean_for_image (image);
+
+	mono_metadata_update_cleanup_on_close (image);
 
 	/*
 	 * The caches inside a MonoImage might refer to metadata which is stored in referenced 

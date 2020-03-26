@@ -9,6 +9,9 @@
 #include "mono/metadata/loader-internals.h"
 #include "mono/metadata/metadata-internals.h"
 
+void
+mono_metadata_update_init (void);
+
 gboolean
 mono_metadata_update_available (void);
 
@@ -20,6 +23,9 @@ mono_metadata_update_prepare (MonoDomain *domain);
 
 void
 mono_metadata_update_publish (MonoDomain *domain, MonoAssemblyLoadContext *alc, uint32_t generation);
+
+void
+mono_metadata_update_cleanup_on_close (MonoImage *base_image);
 
 
 void

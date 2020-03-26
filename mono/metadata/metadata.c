@@ -23,6 +23,7 @@
 #include "tokentype.h"
 #include "class-internals.h"
 #include "metadata-internals.h"
+#include "metadata-update.h"
 #include "verify-internals.h"
 #include "class.h"
 #include "marshal.h"
@@ -1834,6 +1835,8 @@ mono_metadata_init (void)
 	mono_counters_register ("ImgSet Cache Hit", MONO_COUNTER_METADATA | MONO_COUNTER_INT, &img_set_cache_hit);
 	mono_counters_register ("ImgSet Cache Miss", MONO_COUNTER_METADATA | MONO_COUNTER_INT, &img_set_cache_miss);
 	mono_counters_register ("ImgSet Count", MONO_COUNTER_METADATA | MONO_COUNTER_INT, &img_set_count);
+
+	mono_metadata_update_init ();
 }
 
 /**

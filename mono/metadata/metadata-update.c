@@ -13,6 +13,7 @@
 #include "mono/metadata/metadata-update.h"
 #include "mono/metadata/object-internals.h"
 #include "mono/metadata/tokentype.h"
+#include "mono/utils/mono-coop-mutex.h"
 #include "mono/utils/mono-logger-internals.h"
 #include "mono/utils/mono-path.h"
 
@@ -22,6 +23,68 @@
 #define UPDATE_DEBUG(stmt) /*empty */
 #endif
 
+
+/* Maps each MonoTableInfo* to the MonoImage that it belongs to.  This is
+ * mapping the base image MonoTableInfos to the base MonoImage.  We don't need
+ * this for deltas.
+ */
+static GHashTable *table_to_image;
+static MonoCoopMutex table_to_image_mutex;
+
+static void
+table_to_image_lock (void)
+{
+	mono_coop_mutex_lock (&table_to_image_mutex);
+}
+
+static void
+table_to_image_unlock (void)
+{
+	mono_coop_mutex_unlock (&table_to_image_mutex);
+}
+
+static void
+table_to_image_init (void)
+{
+	mono_coop_mutex_init (&table_to_image_mutex);
+	table_to_image = g_hash_table_new (NULL, NULL);
+}
+
+static gboolean
+remove_base_image (gpointer key, gpointer value, gpointer user_data)
+{
+	MonoImage *base_image = (MonoImage*)user_data;
+	MonoImage *value_image = (MonoImage*)value;
+	return (value_image == base_image);
+}
+
+void
+mono_metadata_update_cleanup_on_close (MonoImage *base_image)
+{
+	/* remove all keys that map to the given image */
+	table_to_image_lock ();
+	g_hash_table_foreach_remove (table_to_image, remove_base_image, (gpointer)base_image);
+	table_to_image_unlock ();
+}
+
+static void
+table_to_image_add (MonoImage *base_image)
+{
+	/* If at least one table from this image is already here, they all are */
+	if (g_hash_table_contains (table_to_image, &base_image->tables[MONO_TABLE_MODULE]))
+		return;
+	table_to_image_lock ();
+	if (g_hash_table_contains (table_to_image, &base_image->tables[MONO_TABLE_MODULE])) {
+	        table_to_image_unlock ();
+		return;
+	}
+	for (int idx = 0; idx < MONO_TABLE_NUM; ++idx) {
+		MonoTableInfo *table = &base_image->tables[idx];
+		g_hash_table_insert (table_to_image, table, base_image);
+	}
+	table_to_image_unlock ();
+}
+
 MonoImage*
 mono_image_open_dmeta_from_data (MonoImage *base_image, uint32_t generation, const char *dmeta_name, gconstpointer dmeta_bytes, uint32_t dmeta_len, MonoImageOpenStatus *status);
 
@@ -30,6 +93,13 @@ mono_dil_file_open (const char *dil_path);
 
 void
 mono_image_append_delta (MonoImage *base, MonoImage *delta);
+
+
+void
+mono_metadata_update_init (void)
+{
+	table_to_image_init ();
+}
 
 
 static
@@ -223,11 +293,10 @@ start_encmap (MonoImage *image_dmeta, EncRecs *enc_recs)
 	}
 }
 
+
 void
 mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, const char *dmeta_name, gconstpointer dmeta_bytes, uint32_t dmeta_len, const char *dil_path)
 {
-	int rows;
-
 	const char *basename = image_base->filename;
 
 	mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "LOADING basename=%s, dmeta=%s, dil=%s", basename, dmeta_name, dil_path);
@@ -267,7 +336,12 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, const char
 	/* TODO: extend existing heaps of base image */
 
 	MonoTableInfo *table_enclog = &image_dmeta->tables [MONO_TABLE_ENCLOG];
+	int rows;
 	rows = table_enclog->rows;
+
+	if (!rows)
+		
+	
 	for (int i = 0; i < rows ; ++i) {
 		guint32 cols [MONO_ENCLOG_SIZE];
 		mono_metadata_decode_row (table_enclog, i, cols, MONO_ENCLOG_SIZE);
