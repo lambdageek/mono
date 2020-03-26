@@ -130,7 +130,7 @@ mono_dil_file_destroy (MonoDilFile *dil)
 }
 
 static void
-dump_update_summary (MonoImage *image_base, MonoImage *image_dmeta)
+dump_update_summary (MonoImage *image_base, MonoImage *image_dmeta, uint32_t string_heap_offset)
 {
 	int rows;
 
@@ -168,12 +168,59 @@ dump_update_summary (MonoImage *image_base, MonoImage *image_dmeta)
 	for (int i = 1; i <= rows ; ++i) {
 		guint32 cols [MONO_METHOD_SIZE];
 		mono_metadata_decode_row (&image_dmeta->tables [MONO_TABLE_METHOD], i - 1, cols, MONO_METHOD_SIZE);
-		const char *name = mono_metadata_string_heap (image_dmeta, cols [MONO_METHOD_NAME]);
+		const char *name = mono_metadata_string_heap (image_dmeta, cols [MONO_METHOD_NAME] - string_heap_offset);
 		guint32 rva = cols [MONO_METHOD_RVA];
 		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "dmeta method i=%d, rva=%d/0x%04x, name=%s", i, rva, rva, name);
 	}
 
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "================================");
+}
+
+typedef struct _EncRecs {
+	// for each table, the row in the EncMap table that has the first token for remapping it?
+	uint32_t enc_recs [MONO_TABLE_NUM];
+} EncRecs;
+
+static void
+start_encmap (MonoImage *image_dmeta, EncRecs *enc_recs)
+{
+	memset (enc_recs, 0, sizeof (*enc_recs));
+	MonoTableInfo *encmap = &image_dmeta->tables [MONO_TABLE_ENCMAP];
+	int table;
+	int prev_table = -1;
+	if (!encmap->rows)
+		return;
+	int idx;
+	for (idx = 1; idx <= encmap->rows; ++idx) {
+		guint32 cols[MONO_ENCMAP_SIZE];
+		mono_metadata_decode_row (encmap, idx - 1, cols, MONO_ENCMAP_SIZE);
+		uint32_t tok = cols [MONO_ENCMAP_TOKEN];
+		table = mono_metadata_token_table (tok);
+		g_assert (table >= 0 && table <= MONO_TABLE_LAST);
+		g_assert (table != MONO_TABLE_ENCLOG);
+		g_assert (table != MONO_TABLE_ENCMAP);
+		/* FIXME: this function is cribbed from CMiniMdRW::StartENCMap
+		 * https://github.com/dotnet/runtime/blob/4f9ae42d861fcb4be2fcd5d3d55d5f227d30e723/src/coreclr/src/md/enc/metamodelenc.cpp#L215,
+		 * but for some reason the following assertion table >= prev_table fails.
+		 */
+		g_assert (table >= prev_table);
+		if (table == prev_table)
+			continue;
+		while (prev_table < table) {
+			prev_table++;
+			enc_recs->enc_recs [prev_table] = idx;
+		}
+	}
+	while (prev_table < MONO_TABLE_NUM - 1) {
+		prev_table++;
+		enc_recs->enc_recs [prev_table] = idx;
+	}
+
+
+	/* FIXME: want MONO_TABLE_NUM for the upper bound, but mono_meta_table_name is only defined upto GENERICPARAMCONSTRAINT */
+	for (int i = 0 ; i <= MONO_TABLE_GENERICPARAMCONSTRAINT; ++i) {
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "enc_recs [%02x] / %s = 0x%02x", i, mono_meta_table_name (i), enc_recs->enc_recs[i]);
+	}
 }
 
 void
@@ -188,16 +235,31 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, const char
 	/* TODO: needs some kind of STW or lock */
 	uint32_t generation = mono_metadata_update_prepare (domain);
 
+	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base image string size: 0x%08x", image_base->heap_strings.size);
+
+
 	MonoImageOpenStatus status;
 	MonoImage *image_dmeta = mono_image_open_dmeta_from_data (image_base, generation, dmeta_name, dmeta_bytes, dmeta_len, &status);
 	g_assert (image_dmeta);
 	g_assert (status == MONO_IMAGE_OK);
 
+	if (image_dmeta->minimal_delta) {
+		guint32 idx = mono_metadata_decode_row_col (&image_dmeta->tables [MONO_TABLE_MODULE],
+							    0, MONO_MODULE_NAME);
+
+		const char *module_name = mono_metadata_string_heap (image_dmeta, idx - image_base->heap_strings.size);
+
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "dmeta name: '%s'\n", module_name);
+	}
+
+	EncRecs enc_recs;
+	start_encmap (image_dmeta, &enc_recs);
+
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base  guid: %s", image_base->guid);
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "dmeta guid: %s", image_dmeta->guid);
 
 	if (mono_trace_is_traced (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE)) {
-		dump_update_summary (image_base, image_dmeta);
+		dump_update_summary (image_base, image_dmeta, image_dmeta->minimal_delta ? image_base->heap_strings.size : 0);
 	}
 
 	MonoDilFile *dil = mono_dil_file_open (dil_path);
