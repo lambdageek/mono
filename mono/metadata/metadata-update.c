@@ -379,9 +379,16 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, const char
 		guint32 idx = mono_metadata_decode_row_col (&image_dmeta->tables [MONO_TABLE_MODULE],
 							    0, MONO_MODULE_NAME);
 
+		/* FIXME: for the 2nd update to the same image, we should decrement idx by the sum of all the previous
+		 * heap segments.
+		 */
+		g_assert (idx >= image_base->heap_strings.size);
 		const char *module_name = mono_metadata_string_heap (image_dmeta, idx - image_base->heap_strings.size);
 
-		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "dmeta name: '%s'\n", module_name);
+		/* Set the module name now that we know the base String heap size */
+		g_assert (!image_dmeta->module_name);
+		image_dmeta->module_name = module_name;
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "applied dmeta name: '%s'\n", module_name);
 	}
 
 	MonoTableInfo *table_enclog = &image_dmeta->tables [MONO_TABLE_ENCLOG];
