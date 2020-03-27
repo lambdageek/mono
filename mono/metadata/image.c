@@ -1456,6 +1456,21 @@ mono_is_problematic_image (MonoImage *image)
 	return FALSE;
 }
 
+static void
+dump_encmap (MonoImage *image)
+{
+	MonoTableInfo *encmap = &image->tables [MONO_TABLE_ENCMAP];
+	if (encmap && encmap->rows) {
+		g_print ("ENCMAP:\n");
+		for (int i = 0; i < encmap->rows; ++i) {
+			guint32 cols [MONO_ENCMAP_SIZE];
+			mono_metadata_decode_row (encmap, i, cols, MONO_ENCMAP_SIZE);
+			int token = cols [MONO_ENCMAP_TOKEN];
+			g_print ("\t0x%08x: 0x%08x table: %s \n", i+1, token, mono_meta_table_name (mono_metadata_token_table (token)));
+		}
+	}
+}
+
 static MonoImage *
 do_mono_image_load (MonoImage *image, MonoImageOpenStatus *status,
 		    gboolean care_about_cli, gboolean care_about_pecoff)
@@ -1519,6 +1534,8 @@ do_mono_image_load (MonoImage *image, MonoImageOpenStatus *status,
 
 	if (image->loader == &pe_loader && !image->metadata_only && !mono_verifier_verify_table_data (image, error))
 		goto invalid_image;
+
+	dump_encmap (image);
 
 	mono_image_load_names (image);
 
