@@ -1096,6 +1096,17 @@ mono_metadata_string_heap_checked (MonoImage *meta, guint32 index, MonoError *er
 const char *
 mono_metadata_user_string (MonoImage *meta, guint32 index)
 {
+	if (G_UNLIKELY (index >= meta->heap_us.size && meta->delta_image)) {
+		/* EnC: iterate through existing delta images associated with the base image. */
+		GSList *list = meta->delta_image;
+		MonoImage *dmeta = list->data;
+		while (index >= dmeta->heap_us.size) {
+			list = list->next;
+			g_assertf (!!list, "Could not find token=0x%08x in user string heap of assembly=%s and its delta images", index, meta && meta->name ? meta->name : "unknown image");
+			dmeta = list->data;
+		}
+		meta = dmeta;
+	}
 	g_assert (index < meta->heap_us.size);
 	g_return_val_if_fail (index < meta->heap_us.size, "");
 	return meta->heap_us.data + index;
