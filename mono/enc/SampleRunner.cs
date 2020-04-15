@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Collections.Generic;
 
 public class Sample {
 	public static int Main (string[] args) {
@@ -12,7 +13,7 @@ public class Sample {
 
 		Assembly assm = Assembly.LoadFrom (Path.GetFullPath (args[0]));
 
-		var calc = Calculator.Make (assm, "RoslynILDiff.Program", "DiffTestMethod1");
+		var calc = Calculator.Make (assm, "RoslynILDiff", "DiffTestMethod1");
 
 		var replacer = Replacer.Make ();
 		Calculate (calc);
@@ -21,15 +22,17 @@ public class Sample {
 
 		Calculate (calc);
 
+#if true
 		replacer.Update (assm);
 
 		Calculate (calc);
+#endif
 
 		return 0;
 	}
 
 	private static void Calculate (Calculator calc) {
-#if false
+#if true 
 		for (int i = 1; i < 5; i++)
 			for (int j = 1; j < 4; j++)
 				Console.WriteLine ("Do (" + i + ", " + j + "): " + calc.Do (i, j));
@@ -83,7 +86,24 @@ public class Replacer {
 		return new Replacer ();
 	}
 
+	private Dictionary<Assembly, int> assembly_count = new Dictionary<Assembly, int> ();
+
 	public void Update (Assembly assm) {
-		UpdateMethod.Invoke (null, new object [] { assm });
+		Console.WriteLine ("Apply Delta Update");
+
+		int count;
+		if (!assembly_count.TryGetValue (assm, out count))
+			count = 1;
+		else
+			count++;
+		assembly_count [assm] = count;
+
+		string basename = assm.Location;
+		string dmeta_name = $"{basename}.{count}.dmeta";
+		string dil_name = $"{basename}.{count}.dil";
+		byte[] dmeta_data = System.IO.File.ReadAllBytes (dmeta_name);
+		byte[] dil_data = System.IO.File.ReadAllBytes (dil_name);
+
+		UpdateMethod.Invoke (null, new object [] { assm, dmeta_data, dil_data});
 	}
 }

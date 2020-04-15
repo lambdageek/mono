@@ -591,7 +591,7 @@ struct _MonoImage {
 	/* Contains 1 based indexes */
 	GHashTable *weak_field_indexes;
 
-	GHashTable *delta_index; /* EnC index for method updates */
+	GHashTable *method_table_delta_index; /* EnC index for method updates */
 
 	/* List of MonoImages of deltas.  Parent image owns 1 refcount ref of the delta image */
 	GSList *delta_image;
@@ -600,9 +600,6 @@ struct _MonoImage {
 
 	/* Metadata delta images only */
 	uint32_t generation;
-	/* Metadata delta images only. This is the corresponding IL file */
-	MonoDilFile *delta_il;
-
 
 	/*
 	 * No other runtime locks must be taken while holding this lock.
@@ -900,7 +897,13 @@ void
 mono_image_append_class_to_reflection_info_set (MonoClass *klass);
 
 void
-mono_image_load_enc_delta (MonoDomain *domain, MonoImage *base_image, const char *dmeta_path, gconstpointer dmeta, uint32_t dmeta_len, const char *dil_path);
+mono_image_effective_table (const MonoTableInfo **t, int *idx);
+
+int
+mono_image_relative_delta_index (MonoImage *image_dmeta, int token);
+
+void
+mono_image_load_enc_delta (MonoDomain *domain, MonoImage *base_image, gconstpointer dmeta, uint32_t dmeta_len, gconstpointer dil, uint32_t dil_len);
 
 gpointer
 mono_image_set_alloc  (MonoImageSet *set, guint size);
@@ -949,6 +952,9 @@ mono_metadata_clean_generic_classes_for_image (MonoImage *image);
 MONO_API void
 mono_metadata_cleanup (void);
 
+gboolean
+mono_metadata_table_bounds_check (MonoImage *image, int table_index, int token_index);
+
 const char *   mono_meta_table_name              (int table);
 void           mono_metadata_compute_table_bases (MonoImage *meta);
 
@@ -973,6 +979,7 @@ MONO_API MonoMethodHeader *
 mono_metadata_parse_mh_full                 (MonoImage             *image,
 					     MonoGenericContainer  *container,
 					     const char            *ptr,
+						 gboolean from_dmeta_image,
 						 MonoError *error);
 
 MonoMethodSignature  *mono_metadata_parse_signature_checked (MonoImage *image, 

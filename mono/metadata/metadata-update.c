@@ -25,12 +25,17 @@
 #define UPDATE_DEBUG(stmt) /*empty */
 #endif
 
+typedef struct _EncRecs {
+	// for each table, the row in the EncMap table that has the first token for remapping it?
+	uint32_t enc_recs [MONO_TABLE_NUM];
+} EncRecs;
+
 
 /* Maps each MonoTableInfo* to the MonoImage that it belongs to.  This is
  * mapping the base image MonoTableInfos to the base MonoImage.  We don't need
  * this for deltas.
  */
-static GHashTable *table_to_image;
+static GHashTable *table_to_image, *delta_image_to_encrecs;
 static MonoCoopMutex table_to_image_mutex;
 
 static void
@@ -50,6 +55,7 @@ table_to_image_init (void)
 {
 	mono_coop_mutex_init (&table_to_image_mutex);
 	table_to_image = g_hash_table_new (NULL, NULL);
+	delta_image_to_encrecs = g_hash_table_new (NULL, NULL);
 }
 
 static gboolean
@@ -87,8 +93,15 @@ table_to_image_add (MonoImage *base_image)
 	table_to_image_unlock ();
 }
 
+MonoImage *
+mono_table_info_get_base_image (const MonoTableInfo *t)
+{
+	MonoImage *image = (MonoImage *) g_hash_table_lookup (table_to_image, t);
+	return image;
+}
+
 MonoImage*
-mono_image_open_dmeta_from_data (MonoImage *base_image, uint32_t generation, const char *dmeta_name, gconstpointer dmeta_bytes, uint32_t dmeta_len, MonoImageOpenStatus *status);
+mono_image_open_dmeta_from_data (MonoImage *base_image, uint32_t generation, gconstpointer dmeta_bytes, uint32_t dmeta_len, MonoImageOpenStatus *status);
 
 MonoDilFile *
 mono_dil_file_open (const char *dil_path);
@@ -195,10 +208,10 @@ mono_image_append_delta (MonoImage *base, MonoImage *delta)
 }
 
 MonoImage*
-mono_image_open_dmeta_from_data (MonoImage *base_image, uint32_t generation, const char *dmeta_name, gconstpointer dmeta_bytes, uint32_t dmeta_len, MonoImageOpenStatus *status)
+mono_image_open_dmeta_from_data (MonoImage *base_image, uint32_t generation, gconstpointer dmeta_bytes, uint32_t dmeta_len, MonoImageOpenStatus *status)
 {
 	MonoAssemblyLoadContext *alc = mono_image_get_alc (base_image);
-	MonoImage *dmeta_image = mono_image_open_from_data_internal (alc, (char*)dmeta_bytes, dmeta_len, TRUE, status, FALSE, TRUE, dmeta_name);
+	MonoImage *dmeta_image = mono_image_open_from_data_internal (alc, (char*)dmeta_bytes, dmeta_len, TRUE, status, FALSE, TRUE, NULL);
 
 	dmeta_image->generation = generation;
 
@@ -237,79 +250,198 @@ mono_dil_file_destroy (MonoDilFile *dil)
 }
 
 static void
-dump_update_summary (MonoImage *image_base, MonoImage *image_dmeta, uint32_t string_heap_offset)
+dump_update_summary (MonoImage *image_base, MonoImage *image_dmeta)
 {
 	int rows;
 
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "dmeta tables:");
 	for (int idx = 0; idx < MONO_TABLE_NUM; ++idx) {
-		if (image_dmeta->tables [idx].base) {
-			mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "\t%x \"%s\"", idx, mono_meta_table_name (idx));
-		}
+		if (image_dmeta->tables [idx].base)
+			mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "\t0x%02x \"%s\"", idx, mono_meta_table_name (idx));
 	}
-
-
-	rows = mono_image_get_table_rows (image_base, MONO_TABLE_METHOD);
-	for (int i = 1; i <= rows ; ++i) {
-		ERROR_DECL (error);
-		int token = MONO_TOKEN_METHOD_DEF | i;
-		MonoMethod *method = mono_get_method_checked (image_base, token, NULL, NULL, error);
-		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base  method %d (token=0x%08x): %s", i, token, mono_method_get_name_full (method, TRUE, TRUE, MONO_TYPE_NAME_FORMAT_IL));
-	}
-
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "================================");
 
+	rows = mono_image_get_table_rows (image_base, MONO_TABLE_TYPEREF);
+	for (int i = 1; i <= rows; ++i) {
+		guint32 cols [MONO_TYPEREF_SIZE];
+		mono_metadata_decode_row (&image_base->tables [MONO_TABLE_TYPEREF], i - 1, cols, MONO_TYPEREF_SIZE);
+		const char *scope = mono_metadata_string_heap (image_base, cols [MONO_TYPEREF_SCOPE]);
+		const char *name = mono_metadata_string_heap (image_base, cols [MONO_TYPEREF_NAME]);
+		const char *nspace = mono_metadata_string_heap (image_base, cols [MONO_TYPEREF_NAMESPACE]);
+
+		if (!scope)
+			scope = "<N/A>";
+		if (!name)
+			name = "<N/A>";
+		if (!nspace)
+			nspace = "<N/A>";
+
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base  typeref i=%d (token=0x%08x) -> scope=%s, namespace=%s, name=%s", i, MONO_TOKEN_TYPE_REF | i, scope, nspace, name);
+	}
+	if (!image_dmeta->minimal_delta) {
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "--------------------------------");
+
+		rows = mono_image_get_table_rows (image_dmeta, MONO_TABLE_TYPEREF);
+		for (int i = 1; i <= rows; ++i) {
+			guint32 cols [MONO_TYPEREF_SIZE];
+			mono_metadata_decode_row (&image_dmeta->tables [MONO_TABLE_TYPEREF], i - 1, cols, MONO_TYPEREF_SIZE);
+			const char *scope = mono_metadata_string_heap (image_base, cols [MONO_TYPEREF_SCOPE]);
+			const char *name = mono_metadata_string_heap (image_base, cols [MONO_TYPEREF_NAME]);
+			const char *nspace = mono_metadata_string_heap (image_base, cols [MONO_TYPEREF_NAMESPACE]);
+			mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "dmeta typeref i=%d (token=0x%08x) -> scope=%s, nspace=%s, name=%s", i, MONO_TOKEN_TYPE_REF | i, scope, nspace, name);
+		}
+	}
+	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "================================");
 
 	rows = mono_image_get_table_rows (image_base, MONO_TABLE_METHOD);
 	for (int i = 1; i <= rows ; ++i) {
 		guint32 cols [MONO_METHOD_SIZE];
-		mono_metadata_decode_row (&image_base->tables [MONO_TABLE_METHOD], i - 1, cols, MONO_METHOD_SIZE);
+		mono_metadata_decode_row_raw (&image_base->tables [MONO_TABLE_METHOD], i - 1, cols, MONO_METHOD_SIZE);
 		const char *name = mono_metadata_string_heap (image_base, cols [MONO_METHOD_NAME]);
 		guint32 rva = cols [MONO_METHOD_RVA];
-		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base  method i=%d, rva=%d/0x%04x, name=%s\n", i, rva, rva, name);
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base  method i=%d (token=0x%08x), rva=%d/0x%04x, name=%s", i, MONO_TOKEN_METHOD_DEF | i, rva, rva, name);
 	}
-
-	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "================================");
+	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "--------------------------------");
 
 	rows = mono_image_get_table_rows (image_dmeta, MONO_TABLE_METHOD);
 	for (int i = 1; i <= rows ; ++i) {
 		guint32 cols [MONO_METHOD_SIZE];
-		mono_metadata_decode_row (&image_dmeta->tables [MONO_TABLE_METHOD], i - 1, cols, MONO_METHOD_SIZE);
-		const char *name = mono_metadata_string_heap (image_dmeta, cols [MONO_METHOD_NAME] - string_heap_offset);
+		mono_metadata_decode_row_raw (&image_dmeta->tables [MONO_TABLE_METHOD], i - 1, cols, MONO_METHOD_SIZE);
+		const char *name = mono_metadata_string_heap (image_base, cols [MONO_METHOD_NAME]);
 		guint32 rva = cols [MONO_METHOD_RVA];
-		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "dmeta method i=%d, rva=%d/0x%04x, name=%s", i, rva, rva, name);
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "dmeta method i=%d (token=0x%08x), rva=%d/0x%04x, name=%s", i, MONO_TOKEN_METHOD_DEF | i, rva, rva, name);
+	}
+	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "================================");
+
+	rows = mono_image_get_table_rows (image_base, MONO_TABLE_STANDALONESIG);
+	for (int i = 1; i <= rows; ++i) {
+		guint32 cols [MONO_STAND_ALONE_SIGNATURE_SIZE];
+		mono_metadata_decode_row (&image_base->tables [MONO_TABLE_STANDALONESIG], i - 1, cols, MONO_STAND_ALONE_SIGNATURE_SIZE);
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base  standalonesig i=%d (token=0x%08x) -> 0x%08x", i, MONO_TOKEN_SIGNATURE | i, cols [MONO_STAND_ALONE_SIGNATURE]);
 	}
 
+	if (!image_dmeta->minimal_delta) {
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "--------------------------------");
+
+		rows = mono_image_get_table_rows (image_dmeta, MONO_TABLE_STANDALONESIG);
+		for (int i = 1; i <= rows; ++i) {
+			guint32 cols [MONO_STAND_ALONE_SIGNATURE_SIZE];
+			mono_metadata_decode_row_raw (&image_dmeta->tables [MONO_TABLE_STANDALONESIG], i - 1, cols, MONO_STAND_ALONE_SIGNATURE_SIZE);
+			mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "dmeta standalonesig i=%d (token=0x%08x) -> 0x%08x", i, MONO_TOKEN_SIGNATURE | i, cols [MONO_STAND_ALONE_SIGNATURE]);
+		}
+	}
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "================================");
+
 }
 
-typedef struct _EncRecs {
-	// for each table, the row in the EncMap table that has the first token for remapping it?
-	uint32_t enc_recs [MONO_TABLE_NUM];
-} EncRecs;
+void
+mono_image_effective_table (const MonoTableInfo **t, int *idx)
+{
+	if (*idx < (*t)->rows)
+		return;
+
+	MonoImage *base = mono_table_info_get_base_image (*t);
+	if (!base || !base->delta_image)
+		return;
+
+	GSList *list = base->delta_image;
+	MonoImage *dmeta;
+	int ridx;
+	MonoTableInfo *table;
+
+	/* Invariant: `*t` must be a `MonoTableInfo` of the base image. */
+	g_assert (base->tables < *t && *t < &base->tables [MONO_TABLE_LAST]);
+
+	size_t s = ALIGN_TO (sizeof (MonoTableInfo), sizeof (gpointer));
+	int tbl_index = ((intptr_t) *t - (intptr_t) base->tables) / s;
+
+	do {
+		g_assertf (list, "couldn't find idx=0x%08x in assembly=%s", idx, dmeta && dmeta->name ? dmeta->name : "unknown image");
+		dmeta = list->data;
+		list = list->next;
+		table = &dmeta->tables [tbl_index];
+		ridx = mono_image_relative_delta_index (dmeta, mono_metadata_make_token (tbl_index, *idx));
+	} while (ridx < 0 || ridx >= table->rows);
+
+	*t = table;
+	*idx = ridx;
+}
+
+/*
+ * The ENCMAP table contains the base of the relative offset.
+ *
+ * Example:
+ * Say you have a base image with a METHOD table having 5 entries.  The minimal
+ * delta image adds another one, so it would be indexed with token
+ * `MONO_TOKEN_METHOD_DEF | 6`. However, the minimal delta image only has this
+ * single entry, and thus this would be an out-of-bounds access. That's where
+ * the ENCMAP table comes into play: It will have an entry
+ * `MONO_TOKEN_METHOD_DEF | 5`, so before accessing the new entry in the
+ * minimal delta image, it has to be substracted. Thus the new relative index
+ * is `1`, and no out-of-bounds acccess anymore.
+ *
+ * One can assume that ENCMAP is sorted (todo: verify this claim).
+ *
+ * BTW, `enc_recs` is just a pre-computed map to make the lookup for the
+ * relative index faster.
+ */
+int
+mono_image_relative_delta_index (MonoImage *image_dmeta, int token)
+{
+	MonoTableInfo *encmap = &image_dmeta->tables [MONO_TABLE_ENCMAP];
+
+	if (!encmap->rows || !image_dmeta->minimal_delta)
+		return token;
+
+	EncRecs *enc_recs = g_hash_table_lookup (delta_image_to_encrecs, image_dmeta);
+	g_assert (enc_recs);
+
+	int table = mono_metadata_token_table (token);
+	int index = mono_metadata_token_index (token);
+
+	int index_map = enc_recs->enc_recs [table];
+	guint32 cols[MONO_ENCMAP_SIZE];
+	mono_metadata_decode_row (encmap, index_map - 1, cols, MONO_ENCMAP_SIZE);
+	int map_entry = cols [MONO_ENCMAP_TOKEN];
+
+	while (mono_metadata_token_table (map_entry) == table && mono_metadata_token_index (map_entry) < index) {
+		mono_metadata_decode_row (encmap, ++index_map - 1, cols, MONO_ENCMAP_SIZE);
+		map_entry = cols [MONO_ENCMAP_TOKEN];
+	}
+
+	if (mono_metadata_token_table (map_entry) == table) {
+#if 0
+		g_assert (mono_metadata_token_index (map_entry) == index);
+#endif
+		if (mono_metadata_token_index (map_entry) != index)
+			if (mono_trace_is_traced (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE))
+				g_print ("warning: map_entry=0x%08x != index=0x%08x. is this a problem?\n", map_entry, index);
+	}
+
+	return index_map - enc_recs->enc_recs [table];
+}
 
 static void
-start_encmap (MonoImage *image_dmeta, EncRecs *enc_recs)
+start_encmap (MonoImage *image_dmeta)
 {
-	memset (enc_recs, 0, sizeof (*enc_recs));
 	MonoTableInfo *encmap = &image_dmeta->tables [MONO_TABLE_ENCMAP];
-	int table;
-	int prev_table = -1;
+	int table, prev_table = -1, idx;
+
+	g_assert (!g_hash_table_lookup (delta_image_to_encrecs, image_dmeta));
+
 	if (!encmap->rows)
 		return;
-	int idx;
+
+	EncRecs *enc_recs = g_malloc0 (sizeof (EncRecs));
+
 	for (idx = 1; idx <= encmap->rows; ++idx) {
 		guint32 cols[MONO_ENCMAP_SIZE];
 		mono_metadata_decode_row (encmap, idx - 1, cols, MONO_ENCMAP_SIZE);
 		uint32_t tok = cols [MONO_ENCMAP_TOKEN];
 		table = mono_metadata_token_table (tok);
-		g_assert (table >= 0 && table <= MONO_TABLE_LAST);
+		g_assert (table >= 0 && table < MONO_TABLE_NUM);
 		g_assert (table != MONO_TABLE_ENCLOG);
 		g_assert (table != MONO_TABLE_ENCMAP);
-		/* FIXME: this function is cribbed from CMiniMdRW::StartENCMap
-		 * https://github.com/dotnet/runtime/blob/4f9ae42d861fcb4be2fcd5d3d55d5f227d30e723/src/coreclr/src/md/enc/metamodelenc.cpp#L215,
-		 * but for some reason the following assertion table >= prev_table fails.
-		 */
 		g_assert (table >= prev_table);
 		if (table == prev_table)
 			continue;
@@ -318,75 +450,153 @@ start_encmap (MonoImage *image_dmeta, EncRecs *enc_recs)
 			enc_recs->enc_recs [prev_table] = idx;
 		}
 	}
-	while (prev_table < MONO_TABLE_NUM - 1) {
+	g_assert (prev_table < MONO_TABLE_NUM);
+	while (prev_table < MONO_TABLE_NUM) {
 		prev_table++;
 		enc_recs->enc_recs [prev_table] = idx;
 	}
 
+	for (int i = 0 ; i < MONO_TABLE_NUM; ++i) {
+		if (!image_dmeta->tables [i].base)
+			continue;
 
-	/* FIXME: want MONO_TABLE_NUM for the upper bound, but mono_meta_table_name is only defined upto GENERICPARAMCONSTRAINT */
-	for (int i = 0 ; i <= MONO_TABLE_GENERICPARAMCONSTRAINT; ++i) {
 		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "enc_recs [%02x] / %s = 0x%02x", i, mono_meta_table_name (i), enc_recs->enc_recs[i]);
 	}
+
+	g_hash_table_insert (delta_image_to_encrecs, image_dmeta, enc_recs);
 }
 
 static gboolean
-apply_enclog (MonoTableInfo *table_enclog, MonoImage *image_base, MonoImage *image_dmeta, MonoDilFile *dil, MonoError *error)
+apply_enclog (MonoImage *image_base, MonoImage *image_dmeta, gconstpointer dil_data, uint32_t dil_length, MonoError *error)
 {
+	MonoTableInfo *table_enclog = &image_dmeta->tables [MONO_TABLE_ENCLOG];
 	int rows = table_enclog->rows;
+
+	gboolean assemblyref_updated = FALSE;
 	for (int i = 0; i < rows ; ++i) {
 		guint32 cols [MONO_ENCLOG_SIZE];
 		mono_metadata_decode_row (table_enclog, i, cols, MONO_ENCLOG_SIZE);
+
 		int log_token = cols [MONO_ENCLOG_TOKEN];
 		int func_code = cols [MONO_ENCLOG_FUNC_CODE];
-		g_assertf (func_code == 0, "EnC: FuncCode Default (0) is supported only, but provided: %d (token=0x%08x)", func_code, log_token);
-		int table_index = mono_metadata_token_table (log_token);
-		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "enclog i=%d: token=0x%08x (table=%s): %d", i, log_token, mono_meta_table_name (table_index), func_code);
 
-		if (table_index != MONO_TABLE_METHOD)
-			continue;
+		int token_table = mono_metadata_token_table (log_token);
+		int token_index = mono_metadata_token_index (log_token);
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "enclog i=%d: token=0x%08x (table=%s): %d", i, log_token, mono_meta_table_name (token_table), func_code);
 
-		if (!image_base->delta_index)
-			image_base->delta_index = g_hash_table_new (g_direct_hash, g_direct_equal);
+		switch (func_code) {
+			case 0: /* default */
+				break;
+			case 1: /* add method */
+				// TODO: only static methods are supported, check that.
+				break;
+			default:
+				g_error ("EnC: FuncCode %d not supported (token=0x%08x)", func_code, log_token);
+				break;
+		}
 
-		int token_idx = mono_metadata_token_index (log_token);
-		int rva = mono_metadata_decode_row_col (&image_dmeta->tables [MONO_TABLE_METHOD], token_idx - 1, MONO_METHOD_RVA);
+		if (token_table == MONO_TABLE_ASSEMBLYREF) {
+			g_assert (token_index > image_base->tables [token_table].rows);
 
-		g_hash_table_insert (image_base->delta_index, GUINT_TO_POINTER (token_idx), (gpointer) (dil->il + rva));
+			if (assemblyref_updated)
+				continue;
+
+			assemblyref_updated = TRUE;
+
+			int old_rows = image_base->tables [MONO_TABLE_ASSEMBLYREF].rows;
+			for (GSList *l = image_base->delta_image; l; l = l->next) {
+				MonoImage *delta_child = l->data;
+				old_rows += delta_child->tables [MONO_TABLE_ASSEMBLYREF].rows;
+			}
+			int new_rows = image_dmeta->tables [MONO_TABLE_ASSEMBLYREF].rows;
+
+			old_rows -= new_rows;
+			g_assert (new_rows > 0);
+			g_assert (old_rows > 0);
+
+			/* TODO: this can end bad with code around assembly.c:mono_assembly_load_reference */
+			mono_image_lock (image_base);
+			MonoAssembly **old_array = image_base->references;
+			g_assert (image_base->nreferences == old_rows);
+
+			image_base->references = g_new0 (MonoAssembly *, old_rows + new_rows + 1);
+			memcpy (image_base->references, old_array, sizeof (gpointer) * (old_rows + 1));
+			image_base->nreferences = old_rows + new_rows;
+			mono_image_unlock (image_base);
+
+			g_free (old_array);
+		} else if (token_table == MONO_TABLE_METHOD) {
+			g_assert (token_index <= image_base->tables [token_table].rows);
+			if (!image_base->method_table_delta_index)
+				image_base->method_table_delta_index = g_hash_table_new (g_direct_hash, g_direct_equal);
+
+			int mapped_token = mono_image_relative_delta_index (image_dmeta, mono_metadata_make_token (token_table, token_index));
+			int rva = mono_metadata_decode_row_col (&image_dmeta->tables [MONO_TABLE_METHOD], mapped_token, MONO_METHOD_RVA);
+			if (rva < dil_length) {
+				char *il_address = ((char *) dil_data) + rva;
+				g_hash_table_insert (image_base->method_table_delta_index, GUINT_TO_POINTER (token_index), (gpointer) il_address);
+			} else {
+				/* rva points probably into image_base IL stream. can this ever happen? */
+				g_print ("TODO: this case is still a bit WTF. token=0x%08x with rva=0x%04x\n", log_token, rva);
+			}
+		} else {
+			g_assert (token_index > image_base->tables [token_table].rows);
+			if (mono_trace_is_traced (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE))
+				g_print ("todo: do something about this table index: 0x%02x\n", token_table);
+		}
 	}
 	return TRUE;
 }
 
+static void
+append_heap (MonoStreamHeader *base, MonoStreamHeader *appendix)
+{
+	int size = base->size + appendix->size;
+	char *data = (char *) g_malloc (size * sizeof (char));
+	memcpy (data, base->data, base->size);
+	memcpy (data + base->size, appendix->data, appendix->size);
+	base->data = data;
+	base->size = size;
+}
 
 void
-mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, const char *dmeta_name, gconstpointer dmeta_bytes, uint32_t dmeta_len, const char *dil_path)
+mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, gconstpointer dmeta_bytes, uint32_t dmeta_len, gconstpointer dil_bytes, uint32_t dil_length)
 {
 	const char *basename = image_base->filename;
 
-	mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "LOADING basename=%s, dmeta=%s, dil=%s", basename, dmeta_name, dil_path);
+	if (mono_trace_is_traced (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE)) {
+		g_print ("LOADING basename=%s delta update.\ndelta image=%p & dil=%p\n", basename, dmeta_bytes, dil_bytes);
+		/* TODO: add a non-async version of mono_dump_mem */
+		mono_dump_mem (dmeta_bytes, dmeta_len);
+		mono_dump_mem (dil_bytes, dil_length);
+	}
 
 	uint32_t generation = mono_metadata_update_prepare (domain);
 
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base image string size: 0x%08x", image_base->heap_strings.size);
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base image user string size: 0x%08x", image_base->heap_us.size);
-
+	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base image blob heap addr: %p", image_base->heap_blob.data);
+	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base image blob heap size: 0x%08x", image_base->heap_blob.size);
 
 	MonoImageOpenStatus status;
-	MonoImage *image_dmeta = mono_image_open_dmeta_from_data (image_base, generation, dmeta_name, dmeta_bytes, dmeta_len, &status);
+	MonoImage *image_dmeta = mono_image_open_dmeta_from_data (image_base, generation, dmeta_bytes, dmeta_len, &status);
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "delta image string size: 0x%08x", image_dmeta->heap_strings.size);
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "delta image user string size: 0x%08x", image_dmeta->heap_us.size);
+	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "delta image blob heap addr: %p", image_dmeta->heap_blob.data);
+	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "delta image blob heap size: 0x%08x", image_dmeta->heap_blob.size);
 	g_assert (image_dmeta);
 	g_assert (status == MONO_IMAGE_OK);
 
 	if (image_dmeta->minimal_delta) {
-		guint32 idx = mono_metadata_decode_row_col (&image_dmeta->tables [MONO_TABLE_MODULE],
-							    0, MONO_MODULE_NAME);
+		guint32 idx = mono_metadata_decode_row_col (&image_dmeta->tables [MONO_TABLE_MODULE], 0, MONO_MODULE_NAME);
 
-		/* FIXME: for the 2nd update to the same image, we should decrement idx by the sum of all the previous
-		 * heap segments.
-		 */
-		g_assert (idx >= image_base->heap_strings.size);
-		const char *module_name = mono_metadata_string_heap (image_dmeta, idx - image_base->heap_strings.size);
+		/* TODO: hmm. */
+		const char *module_name = NULL;
+		if (idx >= image_base->heap_strings.size) {
+			module_name = mono_metadata_string_heap (image_dmeta, idx - image_base->heap_strings.size);
+		} else {
+			module_name = mono_metadata_string_heap (image_base, idx);
+		}
 
 		/* Set the module name now that we know the base String heap size */
 		g_assert (!image_dmeta->module_name);
@@ -395,34 +605,43 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, const char
 	}
 
 	MonoTableInfo *table_enclog = &image_dmeta->tables [MONO_TABLE_ENCLOG];
+	MonoTableInfo *table_encmap = &image_dmeta->tables [MONO_TABLE_ENCMAP];
 
 	/* if there are updates, start tracking the tables of the base image, if we weren't already. */
 	if (table_enclog->rows)
 		table_to_image_add (image_base);
 
-	EncRecs enc_recs;
-	start_encmap (image_dmeta, &enc_recs);
+	start_encmap (image_dmeta);
 
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base  guid: %s", image_base->guid);
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "dmeta guid: %s", image_dmeta->guid);
 
-	if (mono_trace_is_traced (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE)) {
-		dump_update_summary (image_base, image_dmeta, image_dmeta->minimal_delta ? image_base->heap_strings.size : 0);
+	if (image_dmeta->minimal_delta) {
+		append_heap (&image_base->heap_strings, &image_dmeta->heap_strings);
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base image strings heap addr (merged): %p", image_base->heap_strings.data);
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base image strings heap size (merged): 0x%08x", image_base->heap_strings.size);
+
+		append_heap (&image_base->heap_us, &image_dmeta->heap_us);
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base image user string heap addr (merged): %p", image_base->heap_us.data);
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base image user string heap size (merged): 0x%08x", image_base->heap_us.size);
+
+		append_heap (&image_base->heap_blob, &image_dmeta->heap_blob);
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base image blob heap addr (merged): %p", image_base->heap_blob.data);
+		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base image blob heap size (merged): 0x%08x", image_base->heap_blob.size);
 	}
 
-	MonoDilFile *dil = mono_dil_file_open (dil_path);
-	image_dmeta->delta_il = dil;
-	/* TODO: extend existing heaps of base image */
+	if (mono_trace_is_traced (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE))
+		dump_update_summary (image_base, image_dmeta);
 
-	if (!table_enclog->rows) {
-		mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "No enclog in delta image %s, nothing to do", dmeta_name);
+	if (!table_enclog->rows && !table_encmap->rows) {
+		mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "No enclog or encmap in delta image for base=%s, nothing to do", basename);
 		mono_metadata_update_cancel (generation);
 		return;
 	}
 
 	ERROR_DECL (error);
-	if (!apply_enclog (table_enclog, image_base, image_dmeta, dil, error)) {
-		mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "Error applying delta image %s, due to: %s", dmeta_name, mono_error_get_message (error));
+	if (!apply_enclog (image_base, image_dmeta, dil_bytes, dil_length, error)) {
+		mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "Error applying delta image to base=%s, due to: %s", basename, mono_error_get_message (error));
 		mono_error_cleanup (error);
 		mono_metadata_update_cancel (generation);
 		return;
@@ -432,5 +651,5 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, const char
 	MonoAssemblyLoadContext *alc = mono_image_get_alc (image_base);
 	mono_metadata_update_publish (domain, alc, generation);
 
-	mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, ">>> EnC delta %s (generation %d) applied", dmeta_name, generation);
+	mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, ">>> EnC delta for base=%s (generation %d) applied", basename, generation);
 }

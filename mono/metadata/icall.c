@@ -6663,8 +6663,9 @@ ves_icall_Mono_Runtime_DumpStateTotal (guint64 *portable_hash, guint64 *unportab
 }
 
 void
-ves_icall_Mono_Runtime_LoadMetadataUpdate (MonoReflectionAssemblyHandle refassm, MonoStringHandle dmeta_path_str, MonoStringHandle dil_path_str,
+ves_icall_Mono_Runtime_LoadMetadataUpdate (MonoReflectionAssemblyHandle refassm,
 					   gconstpointer dmeta_bytes, int32_t dmeta_len,
+					   gconstpointer dil_bytes, int32_t dil_len,
 					   MonoError *error)
 {
 	g_assert (MONO_HANDLE_BOOL (refassm));
@@ -6673,20 +6674,8 @@ ves_icall_Mono_Runtime_LoadMetadataUpdate (MonoReflectionAssemblyHandle refassm,
 	MonoImage *image_base = assm->image;
 	g_assert (image_base);
 
-	char *dmeta_path = NULL;
-	char *dil_path = NULL;
-	dmeta_path = mono_string_handle_to_utf8 (dmeta_path_str, error);
-	goto_if_nok (error, leave);
-	dil_path = mono_string_handle_to_utf8 (dil_path_str, error);
-	goto_if_nok (error, leave);
-
 	MonoDomain *domain = mono_domain_get ();
-
-	mono_image_load_enc_delta (domain, image_base, dmeta_path, dmeta_bytes, dmeta_len, dil_path);
-
-leave:
-	g_free (dil_path);
-	g_free (dmeta_path);
+	mono_image_load_enc_delta (domain, image_base, dmeta_bytes, dmeta_len, dil_bytes, dil_len);
 }
 
 MonoBoolean

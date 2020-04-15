@@ -988,6 +988,30 @@ mono_metadata_compute_size (MonoImage *meta, int tableindex, guint32 *result_bit
 	return size;
 }
 
+/* returns true if given index is not in bounds with provided table/index pair */
+gboolean
+mono_metadata_table_bounds_check (MonoImage *image, int table_index, int token_index)
+{
+	if (token_index <= image->tables [table_index].rows)
+		return FALSE;
+
+	GSList *list = image->delta_image;
+	MonoImage *dmeta;
+	MonoTableInfo *table;
+	int ridx;
+
+	do {
+		if (!list)
+			return TRUE;
+		dmeta = list->data;
+		list = list->next;
+		table = &dmeta->tables [table_index];
+		ridx = mono_image_relative_delta_index (dmeta, mono_metadata_make_token (table_index, token_index));
+	} while (ridx < 0 || ridx >= table->rows);
+
+	return FALSE;
+}
+
 /**
  * mono_metadata_compute_table_bases:
  * \param meta metadata context to compute table values
@@ -1086,17 +1110,6 @@ mono_metadata_string_heap_checked (MonoImage *meta, guint32 index, MonoError *er
 const char *
 mono_metadata_user_string (MonoImage *meta, guint32 index)
 {
-	if (G_UNLIKELY (index >= meta->heap_us.size && meta->delta_image)) {
-		/* EnC: iterate through existing delta images associated with the base image. */
-		GSList *list = meta->delta_image;
-		MonoImage *dmeta = list->data;
-		while (index >= dmeta->heap_us.size) {
-			list = list->next;
-			g_assertf (!!list, "Could not find token=0x%08x in user string heap of assembly=%s and its delta images", index, meta && meta->name ? meta->name : "unknown image");
-			dmeta = list->data;
-		}
-		meta = dmeta;
-	}
 	g_assert (index < meta->heap_us.size);
 	g_return_val_if_fail (index < meta->heap_us.size, "");
 	return meta->heap_us.data + index;
@@ -1191,6 +1204,17 @@ dword_align (const unsigned char *ptr)
 void
 mono_metadata_decode_row (const MonoTableInfo *t, int idx, guint32 *res, int res_size)
 {
+	mono_image_effective_table (&t, &idx);
+
+	mono_metadata_decode_row_raw (t, idx, res, res_size);
+}
+
+/**
+ * same as mono_metadata_decode_row, but ignores potential delta images
+ */
+void
+mono_metadata_decode_row_raw (const MonoTableInfo *t, int idx, guint32 *res, int res_size)
+{
 	guint32 bitfield = t->size_bitfield;
 	int i, count = mono_metadata_table_count (bitfield);
 	const char *data;
@@ -1235,10 +1259,12 @@ mono_metadata_decode_row (const MonoTableInfo *t, int idx, guint32 *res, int res
 gboolean
 mono_metadata_decode_row_checked (const MonoImage *image, const MonoTableInfo *t, int idx, guint32 *res, int res_size, MonoError *error)
 {
+	const char *image_name = image && image->name ? image->name : "unknown image";
+
+	mono_image_effective_table (&t, &idx);
+
 	guint32 bitfield = t->size_bitfield;
 	int i, count = mono_metadata_table_count (bitfield);
-
-	const char *image_name = image && image->name ? image->name : "unknown image";
 
 	if (G_UNLIKELY (! (idx < t->rows && idx >= 0))) {
 		mono_error_set_bad_image_by_name (error, image_name, "row index %d out of bounds: %d rows: %s", idx, t->rows, image_name);
@@ -1283,10 +1309,13 @@ mono_metadata_decode_row_checked (const MonoImage *image, const MonoTableInfo *t
 guint32
 mono_metadata_decode_row_col (const MonoTableInfo *t, int idx, guint col)
 {
-	guint32 bitfield = t->size_bitfield;
 	int i;
 	const char *data;
 	int n;
+
+	mono_image_effective_table (&t, &idx);
+
+	guint32 bitfield = t->size_bitfield;
 	
 	g_assert (idx < t->rows);
 	g_assert (col < mono_metadata_table_count (bitfield));
@@ -4362,7 +4391,7 @@ mono_method_get_header_summary (MonoMethod *method, MonoMethodHeaderSummary *sum
  * Returns: a transient MonoMethodHeader allocated from the heap.
  */
 MonoMethodHeader *
-mono_metadata_parse_mh_full (MonoImage *m, MonoGenericContainer *container, const char *ptr, MonoError *error)
+mono_metadata_parse_mh_full (MonoImage *m, MonoGenericContainer *container, const char *ptr, /* FIXME: MAJOR HACK */gboolean from_dmeta_image, MonoError *error)
 {
 	MonoMethodHeader *mh = NULL;
 	unsigned char flags = *(const unsigned char *) ptr;
@@ -4381,6 +4410,15 @@ mono_metadata_parse_mh_full (MonoImage *m, MonoGenericContainer *container, cons
 		mono_error_set_bad_image (error, m, "Method header with null pointer");
 		return NULL;
 	}
+	/* check out what
+	 * src/libraries/System.Reflection.Metadata/src/System/Reflection/PortableExecutable/ManagedPEBuilder.cs
+	 * is doing (not in roslyn code) */
+
+	/* and more specifically,
+	 * Metadata/Ecma335/Encoding/MethodBodyStreamEncoder.cs
+	 *
+	 * what token is used for `local_var_sig_tok` in the EnC case?
+	 */
 
 	switch (format) {
 	case METHOD_HEADER_TINY_FORMAT:
@@ -4423,12 +4461,13 @@ mono_metadata_parse_mh_full (MonoImage *m, MonoGenericContainer *container, cons
 	}
 
 	if (local_var_sig_tok) {
-		int idx = (local_var_sig_tok & 0xffffff)-1;
-		if (idx >= t->rows || idx < 0) {
-			mono_error_set_bad_image (error, m, "Invalid method header local vars signature token 0x%8x", idx);
+		int idx = mono_metadata_token_index (local_var_sig_tok) - 1;
+		if (mono_metadata_table_bounds_check (m, MONO_TABLE_STANDALONESIG, idx)) {
+			mono_error_set_bad_image (error, m, "Invalid method header local vars signature token 0x%08x", idx);
 			goto fail;
 		}
-		mono_metadata_decode_row (t, idx, cols, 1);
+		/* FIXME: most amazing MAJOR HACK :-( */
+		mono_metadata_decode_row (t, idx + !!from_dmeta_image, cols, MONO_STAND_ALONE_SIGNATURE_SIZE);
 
 		if (!mono_verifier_verify_standalone_signature (m, cols [MONO_STAND_ALONE_SIGNATURE], error))
 			goto fail;
@@ -4490,7 +4529,7 @@ MonoMethodHeader *
 mono_metadata_parse_mh (MonoImage *m, const char *ptr)
 {
 	ERROR_DECL (error);
-	MonoMethodHeader *header = mono_metadata_parse_mh_full (m, NULL, ptr, error);
+	MonoMethodHeader *header = mono_metadata_parse_mh_full (m, NULL, ptr, FALSE, error);
 	mono_error_cleanup (error);
 	return header;
 }

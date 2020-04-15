@@ -269,23 +269,15 @@ namespace Mono {
 		}
 
 		[MethodImplAttribute (MethodImplOptions.InternalCall)]
-		private static unsafe extern void LoadMetadataUpdate_internal (Assembly base_assm, string dmeta_path, string dil_path, byte* dmeta_bytes, int dmeta_length);
+		private static unsafe extern void LoadMetadataUpdate_internal (Assembly base_assm, byte* dmeta_bytes, int dmeta_length, byte *dil_bytes, int dil_length);
 
-		private static int count;
-
-		public static void LoadMetadataUpdate (Assembly assm) {
-			count++;
-			string basename = assm.Location;
-			string dmeta_name = $"{basename}.{count}.dmeta";
-			string dil_name = $"{basename}.{count}.dil";
-
-			byte[] dmeta = System.IO.File.ReadAllBytes (dmeta_name);
+		public static void LoadMetadataUpdate (Assembly assm, byte[] dmeta_data, byte[] dil_data) {
 			unsafe {
-				fixed (byte* dmeta_bytes = dmeta) {
-				       LoadMetadataUpdate_internal (assm, dmeta_name, dil_name, dmeta_bytes, dmeta.Length);
+				fixed (byte* dmeta_bytes = dmeta_data)
+				fixed (byte* dil_bytes = dil_data) {
+				       LoadMetadataUpdate_internal (assm, dmeta_bytes, dmeta_data.Length, dil_bytes, dil_data.Length);
 				}
 			}
 		}
-		
 	}
 }

@@ -43,6 +43,7 @@ AC_DEFUN([AC_MONO_OUTPUT], [
 		mono/tests/testing_gac/Makefile
 		mono/tests/fullaot-mixed/Makefile
 		mono/tests/llvmonly-mixed/Makefile
+		mono/tests/enc/Makefile
 		mono/unit-tests/Makefile
 		mono/benchmark/Makefile
 		mono/mini/Makefile

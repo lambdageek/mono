@@ -44,9 +44,10 @@ for arg in ${NAME}_v?.il; do
 	ILASM_ARGS="$ILASM_ARGS -ENC=$arg"
 done
 
+rm $OUT.*
 $ILASM -DEBUG -OUT=$OUT.exe $NAME.il $ILASM_ARGS
 
 cp template.runtimeconfig.json $OUT.runtimeconfig.json
 
 #MONO_VERBOSE_METHOD=Do MONO_ENV_OPTIONS='--debug --interpreter' lldb -- $MONODOTNET $OUT.exe
-MONO_LOG_MASK=metadata-update MONO_LOG_LEVEL=debug MONO_VERBOSE_METHOD=Do MONO_ENV_OPTIONS='--debug --interpreter' MONO_PATH=${m}/mcs/class/lib/net_4_x MONO_CONFIG=${m}/runtime/etc/mono/config lldb -- $MONOMONO $OUT.exe
+MONO_LOG_MASK=metadata-update MONO_LOG_LEVEL=debug MONO_VERBOSE_METHOD=Do MONO_ENV_OPTIONS='--debug --interp=-inline' MONO_PATH=${m}/mcs/class/lib/net_4_x MONO_CONFIG=${m}/runtime/etc/mono/config lldb -- $MONOMONO $OUT.exe

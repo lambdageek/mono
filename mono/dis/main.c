@@ -683,7 +683,7 @@ dis_code (MonoImage *m, guint32 token, guint32 rva, MonoGenericContainer *contai
 		g_free (override);
 	}
 
-	mh = mono_metadata_parse_mh_full (m, container, ptr, error);
+	mh = mono_metadata_parse_mh_full (m, container, ptr, FALSE, error);
 	entry_point = mono_image_get_entry_point (m);
 	if (entry_point && mono_metadata_token_index (entry_point) && mono_metadata_token_table (entry_point) == MONO_TABLE_METHOD) {
 		loc = mono_metadata_locate_token (m, entry_point);
