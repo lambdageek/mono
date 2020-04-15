@@ -864,7 +864,7 @@ method_from_memberref (MonoImage *image, guint32 idx, MonoGenericContext *typesp
 
 	error_init (error);
 
-	mono_metadata_decode_row (&tables [MONO_TABLE_MEMBERREF], idx-1, cols, 3);
+	mono_metadata_decode_row (&tables [MONO_TABLE_MEMBERREF], idx-1, cols, MONO_MEMBERREF_SIZE);
 	nindex = cols [MONO_MEMBERREF_CLASS] >> MONO_MEMBERREF_PARENT_BITS;
 	class_index = cols [MONO_MEMBERREF_CLASS] & MONO_MEMBERREF_PARENT_MASK;
 	/*g_print ("methodref: 0x%x 0x%x %s\n", class, nindex,
@@ -882,6 +882,11 @@ method_from_memberref (MonoImage *image, guint32 idx, MonoGenericContext *typesp
 
 	switch (class_index) {
 	case MONO_MEMBERREF_PARENT_TYPEREF:
+#if 1
+		/* FIXME EnC: MAJOR HACK :-( */
+		if (image->delta_image && idx >= tables [MONO_TABLE_MEMBERREF].rows)
+			nindex += 1;
+#endif
 		klass = mono_class_from_typeref_checked (image, MONO_TOKEN_TYPE_REF | nindex, error);
 		if (!klass)
 			goto fail;
@@ -1073,7 +1078,7 @@ mono_get_method_from_token (MonoImage *image, guint32 token, MonoClass *klass,
 
 	if (used_context) *used_context = FALSE;
 
-	if (idx > image->tables [MONO_TABLE_METHOD].rows) {
+	if (mono_metadata_table_bounds_check (image, MONO_TABLE_METHOD, idx)) {
 		mono_error_set_bad_image (error, image, "Bad method token 0x%08x (out of bounds).", token);
 		return NULL;
 	}
@@ -2024,6 +2029,7 @@ mono_method_get_header_internal (MonoMethod *method, MonoError *error)
 {
 	int idx;
 	guint32 rva;
+	gboolean from_dmeta_image = FALSE;
 	MonoImage* img;
 	gpointer loc = NULL;
 	MonoGenericContainer *container;
@@ -2072,9 +2078,10 @@ mono_method_get_header_internal (MonoMethod *method, MonoError *error)
 	idx = mono_metadata_token_index (method->token);
 
 	/* EnC case */
-	if (G_UNLIKELY (img->delta_index)) {
+	if (G_UNLIKELY (img->method_table_delta_index)) {
 		/* pre-computed rva pointer into delta IL image */
-		loc = g_hash_table_lookup (img->delta_index, GUINT_TO_POINTER (idx));
+		loc = g_hash_table_lookup (img->method_table_delta_index, GUINT_TO_POINTER (idx));
+		from_dmeta_image = !!loc;
 	}
 
 	if (!loc) {
@@ -2098,7 +2105,7 @@ mono_method_get_header_internal (MonoMethod *method, MonoError *error)
 	container = mono_method_get_generic_container (method);
 	if (!container)
 		container = mono_class_try_get_generic_container (method->klass);
-	return mono_metadata_parse_mh_full (img, container, (const char *)loc, error);
+	return mono_metadata_parse_mh_full (img, container, (const char *)loc, from_dmeta_image, error);
 }
 
 MonoMethodHeader*

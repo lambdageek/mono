@@ -36,5 +36,8 @@ mono_dil_file_close (MonoDilFile *dil);
 void
 mono_dil_file_destroy (MonoDilFile *dil);
 
+MonoImage *
+mono_table_info_get_base_image (const MonoTableInfo *t);
+
 
 #endif /*__MONO_METADATA_UPDATE_H__*/
