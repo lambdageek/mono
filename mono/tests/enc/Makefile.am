@@ -25,5 +25,5 @@ EncHelper.dll: EncHelper.cs
 	$(MCS)  -target:library -out:$@ $<
 
 %.dll: %.cs EncHelper.dll
-	bash -x -c "mono --debug $(ROSLYNILDIFF) -l:EncHelper.dll $< $(basename $<)*_v?.cs"
+	bash -x -c "mono --debug $(ROSLYNILDIFF) -l:EncHelper.dll $< $(basename $<)_v?.cs"
 	
