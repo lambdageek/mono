@@ -1,7 +1,7 @@
 include ../common_mixed.mk
 
 ROSLYNILDIFF ?=/Users/lewurm/work/roslynildiff/bin/Debug/roslynildiff.exe
-TESTS_REGULAR := ReplaceMethod.dll ReplaceMethodOften.dll
+TESTS_REGULAR := ReplaceMethod.dll ReplaceMethodOften.dll UserStringSwap.dll
 
 # DEBUG_FLAGS=MONO_LOG_MASK=metadata-update MONO_LOG_LEVEL=debug MONO_VERBOSE_METHOD=DiffTestMethod1
 
@@ -10,16 +10,19 @@ check: $(TESTS_REGULAR)
 	passed=0; \
 	failed_tests=""; \
 	for i in $(TESTS_REGULAR); do \
+		echo "======== $$i start ======== "; \
 		if $(DEBUG_FLAGS) ../../mini/mono $(TEST_RUNTIME_ARGS) --interp=-inline $$i ; \
 		then \
 			passed=`expr $${passed} + 1`; \
+			echo "======== $$i end (passed) ======== "; \
 		else \
 			failed=`expr $${failed} + 1`; \
 			failed_tests="$${failed_tests} $$i"; \
+			echo "======== $$i end (failed) ======== "; \
 		fi;  \
-		echo "========= $$i done ========== "; \
 	done; \
-	echo "$${passed} test(s) passed. $${failed} test(s) did not pass.";
+	echo "$${passed} test(s) passed. $${failed} test(s) did not pass."; \
+	exit $${failed}
 
 EncHelper.dll: EncHelper.cs
 	$(MCS)  -target:library -out:$@ $<
