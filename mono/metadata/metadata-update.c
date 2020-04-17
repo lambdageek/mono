@@ -493,7 +493,11 @@ apply_enclog (MonoImage *image_base, MonoImage *image_dmeta, gconstpointer dil_d
 
 			g_free (old_array);
 		} else if (token_table == MONO_TABLE_METHOD) {
-			g_assert (token_index <= image_base->tables [token_table].rows);
+			if (token_index > image_base->tables [token_table].rows) {
+				mono_error_set_type_load_name (error, NULL, image_base->name, "EnC: cannot add new method with token 0x%08x", log_token);
+				return FALSE;
+			}
+
 			if (!image_base->method_table_delta_index)
 				image_base->method_table_delta_index = g_hash_table_new (g_direct_hash, g_direct_equal);
 
@@ -506,6 +510,12 @@ apply_enclog (MonoImage *image_base, MonoImage *image_dmeta, gconstpointer dil_d
 				/* rva points probably into image_base IL stream. can this ever happen? */
 				g_print ("TODO: this case is still a bit WTF. token=0x%08x with rva=0x%04x\n", log_token, rva);
 			}
+		} else if (token_table == MONO_TABLE_TYPEDEF) {
+			/* TODO: throw? */
+			/* TODO: happens changing the class (adding field or method). we ignore it, but dragons are here */
+
+			/* existing entries are supposed to be patched */
+			g_assert (token_index <= image_base->tables [token_table].rows);
 		} else {
 			g_assert (token_index > image_base->tables [token_table].rows);
 			if (mono_trace_is_traced (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE))
@@ -527,9 +537,13 @@ append_heap (MonoStreamHeader *base, MonoStreamHeader *appendix)
 }
 
 void
-mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, gconstpointer dmeta_bytes, uint32_t dmeta_length, gconstpointer dil_bytes, uint32_t dil_length)
+mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, gconstpointer dmeta_bytes, uint32_t dmeta_length, gconstpointer dil_bytes, uint32_t dil_length, MonoError *error)
 {
 	const char *basename = image_base->filename;
+	/* FIXME:
+	 * (1) do we need to memcpy dmeta_bytes ? (maybe)
+	 * (2) do we need to memcpy dil_bytes ? (pretty sure, yes)
+	 */
 
 	if (mono_trace_is_traced (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE)) {
 		g_print ("LOADING basename=%s delta update.\ndelta image=%p & dil=%p\n", basename, dmeta_bytes, dil_bytes);
@@ -606,10 +620,8 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, gconstpoin
 		return;
 	}
 
-	ERROR_DECL (error);
 	if (!apply_enclog (image_base, image_dmeta, dil_bytes, dil_length, error)) {
 		mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "Error applying delta image to base=%s, due to: %s", basename, mono_error_get_message (error));
-		mono_error_cleanup (error);
 		mono_metadata_update_cancel (generation);
 		return;
 	}

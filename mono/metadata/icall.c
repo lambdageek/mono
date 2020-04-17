@@ -6746,7 +6746,7 @@ ves_icall_Mono_Runtime_LoadMetadataUpdate (MonoReflectionAssemblyHandle refassm,
 	g_assert (image_base);
 
 	MonoDomain *domain = mono_domain_get ();
-	mono_image_load_enc_delta (domain, image_base, dmeta_bytes, dmeta_len, dil_bytes, dil_len);
+	mono_image_load_enc_delta (domain, image_base, dmeta_bytes, dmeta_len, dil_bytes, dil_len, error);
 }
 
 MonoBoolean
