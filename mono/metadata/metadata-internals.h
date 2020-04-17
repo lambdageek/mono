@@ -990,7 +990,6 @@ MONO_API MonoMethodHeader *
 mono_metadata_parse_mh_full                 (MonoImage             *image,
 					     MonoGenericContainer  *container,
 					     const char            *ptr,
-						 gboolean from_dmeta_image,
 						 MonoError *error);
 
 MonoMethodSignature  *mono_metadata_parse_signature_checked (MonoImage *image, 

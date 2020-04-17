@@ -1006,7 +1006,7 @@ mono_metadata_table_bounds_check (MonoImage *image, int table_index, int token_i
 		dmeta = list->data;
 		list = list->next;
 		table = &dmeta->tables [table_index];
-		ridx = mono_image_relative_delta_index (dmeta, mono_metadata_make_token (table_index, token_index));
+		ridx = mono_image_relative_delta_index (dmeta, mono_metadata_make_token (table_index, token_index + 1)) - 1;
 	} while (ridx < 0 || ridx >= table->rows);
 
 	return FALSE;
@@ -4482,7 +4482,7 @@ mono_method_get_header_summary (MonoMethod *method, MonoMethodHeaderSummary *sum
  * Returns: a transient MonoMethodHeader allocated from the heap.
  */
 MonoMethodHeader *
-mono_metadata_parse_mh_full (MonoImage *m, MonoGenericContainer *container, const char *ptr, /* FIXME: MAJOR HACK */gboolean from_dmeta_image, MonoError *error)
+mono_metadata_parse_mh_full (MonoImage *m, MonoGenericContainer *container, const char *ptr, MonoError *error)
 {
 	MonoMethodHeader *mh = NULL;
 	unsigned char flags = *(const unsigned char *) ptr;
@@ -4557,8 +4557,7 @@ mono_metadata_parse_mh_full (MonoImage *m, MonoGenericContainer *container, cons
 			mono_error_set_bad_image (error, m, "Invalid method header local vars signature token 0x%08x", idx);
 			goto fail;
 		}
-		/* FIXME: most amazing MAJOR HACK :-( */
-		mono_metadata_decode_row (t, idx + !!from_dmeta_image, cols, MONO_STAND_ALONE_SIGNATURE_SIZE);
+		mono_metadata_decode_row (t, idx, cols, MONO_STAND_ALONE_SIGNATURE_SIZE);
 
 		if (!mono_verifier_verify_standalone_signature (m, cols [MONO_STAND_ALONE_SIGNATURE], error))
 			goto fail;
@@ -4620,7 +4619,7 @@ MonoMethodHeader *
 mono_metadata_parse_mh (MonoImage *m, const char *ptr)
 {
 	ERROR_DECL (error);
-	MonoMethodHeader *header = mono_metadata_parse_mh_full (m, NULL, ptr, FALSE, error);
+	MonoMethodHeader *header = mono_metadata_parse_mh_full (m, NULL, ptr, error);
 	mono_error_cleanup (error);
 	return header;
 }

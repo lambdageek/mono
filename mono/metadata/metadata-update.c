@@ -360,7 +360,7 @@ mono_image_effective_table (const MonoTableInfo **t, int *idx)
 		dmeta = list->data;
 		list = list->next;
 		table = &dmeta->tables [tbl_index];
-		ridx = mono_image_relative_delta_index (dmeta, mono_metadata_make_token (tbl_index, *idx));
+		ridx = mono_image_relative_delta_index (dmeta, mono_metadata_make_token (tbl_index, *idx + 1)) - 1;
 	} while (ridx < 0 || ridx >= table->rows);
 
 	*t = table;
@@ -389,22 +389,24 @@ int
 mono_image_relative_delta_index (MonoImage *image_dmeta, int token)
 {
 	MonoTableInfo *encmap = &image_dmeta->tables [MONO_TABLE_ENCMAP];
+	int table = mono_metadata_token_table (token);
+	int index = mono_metadata_token_index (token);
+
+	/* this helper expects and returns as "index origin = 1" */
+	g_assert (index > 0);
 
 	if (!encmap->rows || !image_dmeta->minimal_delta)
-		return token;
+		return mono_metadata_token_index (token);
 
 	EncRecs *enc_recs = g_hash_table_lookup (delta_image_to_encrecs, image_dmeta);
 	g_assert (enc_recs);
-
-	int table = mono_metadata_token_table (token);
-	int index = mono_metadata_token_index (token);
 
 	int index_map = enc_recs->enc_recs [table];
 	guint32 cols[MONO_ENCMAP_SIZE];
 	mono_metadata_decode_row (encmap, index_map - 1, cols, MONO_ENCMAP_SIZE);
 	int map_entry = cols [MONO_ENCMAP_TOKEN];
 
-	while (mono_metadata_token_table (map_entry) == table && mono_metadata_token_index (map_entry) < index) {
+	while (mono_metadata_token_table (map_entry) == table && mono_metadata_token_index (map_entry) < index && index_map < encmap->rows) {
 		mono_metadata_decode_row (encmap, ++index_map - 1, cols, MONO_ENCMAP_SIZE);
 		map_entry = cols [MONO_ENCMAP_TOKEN];
 	}
@@ -418,7 +420,9 @@ mono_image_relative_delta_index (MonoImage *image_dmeta, int token)
 				g_print ("warning: map_entry=0x%08x != index=0x%08x. is this a problem?\n", map_entry, index);
 	}
 
-	return index_map - enc_recs->enc_recs [table];
+	int return_val = index_map - enc_recs->enc_recs [table] + 1;
+	g_assert (return_val > 0);
+	return return_val;
 }
 
 static void
@@ -531,7 +535,7 @@ apply_enclog (MonoImage *image_base, MonoImage *image_dmeta, gconstpointer dil_d
 				image_base->method_table_delta_index = g_hash_table_new (g_direct_hash, g_direct_equal);
 
 			int mapped_token = mono_image_relative_delta_index (image_dmeta, mono_metadata_make_token (token_table, token_index));
-			int rva = mono_metadata_decode_row_col (&image_dmeta->tables [MONO_TABLE_METHOD], mapped_token, MONO_METHOD_RVA);
+			int rva = mono_metadata_decode_row_col (&image_dmeta->tables [MONO_TABLE_METHOD], mapped_token - 1, MONO_METHOD_RVA);
 			if (rva < dil_length) {
 				char *il_address = ((char *) dil_data) + rva;
 				g_hash_table_insert (image_base->method_table_delta_index, GUINT_TO_POINTER (token_index), (gpointer) il_address);
