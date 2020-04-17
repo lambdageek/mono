@@ -27,7 +27,7 @@
 
 typedef struct _EncRecs {
 	// for each table, the row in the EncMap table that has the first token for remapping it?
-	uint32_t enc_recs [MONO_TABLE_NUM];
+	uint32_t enc_recs [MONO_TABLE_NUM + 1];
 } EncRecs;
 
 
