@@ -347,8 +347,6 @@ typedef struct {
 #endif
 } MonoImageStorage;
 
-typedef struct _MonoDilFile MonoDilFile;
-
 struct _MonoImage {
 	/*
 	 * This count is incremented during these situations:

@@ -101,10 +101,7 @@ mono_table_info_get_base_image (const MonoTableInfo *t)
 }
 
 MonoImage*
-mono_image_open_dmeta_from_data (MonoImage *base_image, uint32_t generation, gconstpointer dmeta_bytes, uint32_t dmeta_len, MonoImageOpenStatus *status);
-
-MonoDilFile *
-mono_dil_file_open (const char *dil_path);
+mono_image_open_dmeta_from_data (MonoImage *base_image, uint32_t generation, gconstpointer dmeta_bytes, uint32_t dmeta_length, MonoImageOpenStatus *status);
 
 void
 mono_image_append_delta (MonoImage *base, MonoImage *delta);
@@ -189,12 +186,6 @@ mono_metadata_update_cancel (uint32_t generation)
 	publish_unlock ();
 }
 
-struct _MonoDilFile {
-	MonoFileMap *filed;
-	gpointer handle;
-	char *il;
-};
-
 void
 mono_image_append_delta (MonoImage *base, MonoImage *delta)
 {
@@ -208,10 +199,10 @@ mono_image_append_delta (MonoImage *base, MonoImage *delta)
 }
 
 MonoImage*
-mono_image_open_dmeta_from_data (MonoImage *base_image, uint32_t generation, gconstpointer dmeta_bytes, uint32_t dmeta_len, MonoImageOpenStatus *status)
+mono_image_open_dmeta_from_data (MonoImage *base_image, uint32_t generation, gconstpointer dmeta_bytes, uint32_t dmeta_length, MonoImageOpenStatus *status)
 {
 	MonoAssemblyLoadContext *alc = mono_image_get_alc (base_image);
-	MonoImage *dmeta_image = mono_image_open_from_data_internal (alc, (char*)dmeta_bytes, dmeta_len, TRUE, status, FALSE, TRUE, NULL, NULL);
+	MonoImage *dmeta_image = mono_image_open_from_data_internal (alc, (char*)dmeta_bytes, dmeta_length, TRUE, status, FALSE, TRUE, NULL, NULL);
 
 	dmeta_image->generation = generation;
 
@@ -219,34 +210,6 @@ mono_image_open_dmeta_from_data (MonoImage *base_image, uint32_t generation, gco
 	mono_image_append_delta (base_image, dmeta_image);
 
 	return dmeta_image;
-}
-
-MonoDilFile *
-mono_dil_file_open (const char *dil_path)
-{
-	MonoDilFile *dil = g_new0 (MonoDilFile, 1);
-
-	dil->filed = mono_file_map_open (dil_path);
-	g_assert (dil->filed);
-	dil->il = (char *) mono_file_map_fileio (
-			mono_file_map_size (dil->filed),
-			MONO_MMAP_READ | MONO_MMAP_PRIVATE,
-			mono_file_map_fd (dil->filed),
-			0,
-			&dil->handle);
-	return dil;
-}
-
-void
-mono_dil_file_close (MonoDilFile *dil)
-{
-	mono_file_map_close (dil->filed);
-}
-
-void
-mono_dil_file_destroy (MonoDilFile *dil)
-{
-	g_free (dil);
 }
 
 static void
@@ -564,14 +527,14 @@ append_heap (MonoStreamHeader *base, MonoStreamHeader *appendix)
 }
 
 void
-mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, gconstpointer dmeta_bytes, uint32_t dmeta_len, gconstpointer dil_bytes, uint32_t dil_length)
+mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, gconstpointer dmeta_bytes, uint32_t dmeta_length, gconstpointer dil_bytes, uint32_t dil_length)
 {
 	const char *basename = image_base->filename;
 
 	if (mono_trace_is_traced (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE)) {
 		g_print ("LOADING basename=%s delta update.\ndelta image=%p & dil=%p\n", basename, dmeta_bytes, dil_bytes);
 		/* TODO: add a non-async version of mono_dump_mem */
-		mono_dump_mem (dmeta_bytes, dmeta_len);
+		mono_dump_mem (dmeta_bytes, dmeta_length);
 		mono_dump_mem (dil_bytes, dil_length);
 	}
 
@@ -583,7 +546,7 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, gconstpoin
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base image blob heap size: 0x%08x", image_base->heap_blob.size);
 
 	MonoImageOpenStatus status;
-	MonoImage *image_dmeta = mono_image_open_dmeta_from_data (image_base, generation, dmeta_bytes, dmeta_len, &status);
+	MonoImage *image_dmeta = mono_image_open_dmeta_from_data (image_base, generation, dmeta_bytes, dmeta_length, &status);
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "delta image string size: 0x%08x", image_dmeta->heap_strings.size);
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "delta image user string size: 0x%08x", image_dmeta->heap_us.size);
 	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "delta image blob heap addr: %p", image_dmeta->heap_blob.data);
