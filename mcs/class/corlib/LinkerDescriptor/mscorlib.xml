@@ -839,7 +839,9 @@
 		to allow such detection logic to work, even if the class is not used
 		directly.
 		-->
-		<type fullname="Mono.Runtime" preserve="nothing" />
+		<type fullname="Mono.Runtime">
+			<method name="LoadMetadataUpdate" />
+		</type>
 
 		<type fullname="System.Threading.WasmRuntime"/>
 
