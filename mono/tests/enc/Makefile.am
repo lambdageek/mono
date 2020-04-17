@@ -1,7 +1,12 @@
 include ../common_mixed.mk
 
 ROSLYNILDIFF ?=/Users/lewurm/work/roslynildiff/bin/Debug/roslynildiff.exe
-TESTS_REGULAR := ReplaceMethod.dll ReplaceMethodOften.dll UserStringSwap.dll
+TESTS_REGULAR := \
+	CallExisting.dll \
+	ReplaceMethod.dll \
+	ReplaceMethodOften.dll \
+	TypeTokenSwap.dll \
+	UserStringSwap.dll
 
 # DEBUG_FLAGS=MONO_LOG_MASK=metadata-update MONO_LOG_LEVEL=debug MONO_VERBOSE_METHOD=DiffTestMethod1
 
