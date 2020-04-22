@@ -433,8 +433,84 @@ start_encmap (MonoImage *image_dmeta)
 	g_hash_table_insert (delta_image_to_encrecs, image_dmeta, enc_recs);
 }
 
+static const char*
+funccode_to_str (int func_code)
+{
+	switch (func_code) {
+		case 0: return "Func default";
+		case 1: return "Method Create";
+		case 2: return "Field Create";
+		case 3: return "Param Create";
+		case 4: return "Property Create";
+		case 5: return "Event Create";
+		default: g_assert_not_reached ();
+	}
+	return NULL;
+}
+
+/* Run some sanity checks first. If we detect unsupported scenarios, this
+ * function will fail and the metadata update should be aborted. This should
+ * run before anything in the metadata world is updated. */
 static gboolean
-apply_enclog (MonoImage *image_base, MonoImage *image_dmeta, gconstpointer dil_data, uint32_t dil_length, MonoError *error)
+apply_enclog_pass1 (MonoImage *image_base, MonoImage *image_dmeta, gconstpointer dil_data, uint32_t dil_length, MonoError *error)
+{
+	MonoTableInfo *table_enclog = &image_dmeta->tables [MONO_TABLE_ENCLOG];
+	int rows = table_enclog->rows;
+
+	/* hack: make a pass over it, looking only for table method updates, in
+	 * order to give more meaningful error messages first */
+
+	for (int i = 0; i < rows ; ++i) {
+		guint32 cols [MONO_ENCLOG_SIZE];
+		mono_metadata_decode_row (table_enclog, i, cols, MONO_ENCLOG_SIZE);
+
+		int log_token = cols [MONO_ENCLOG_TOKEN];
+		int func_code = cols [MONO_ENCLOG_FUNC_CODE];
+
+		int token_table = mono_metadata_token_table (log_token);
+		int token_index = mono_metadata_token_index (log_token);
+
+		if (token_table != MONO_TABLE_METHOD)
+			continue;
+
+		if (token_index > image_base->tables [token_table].rows) {
+			mono_error_set_type_load_name (error, NULL, image_base->name, "EnC: cannot add new method with token 0x%08x", log_token);
+			return FALSE;
+		}
+
+		g_assert (func_code == 0); /* anything else doesn't make sense here */
+	}
+
+	for (int i = 0; i < rows ; ++i) {
+		guint32 cols [MONO_ENCLOG_SIZE];
+		mono_metadata_decode_row (table_enclog, i, cols, MONO_ENCLOG_SIZE);
+
+		int log_token = cols [MONO_ENCLOG_TOKEN];
+		int func_code = cols [MONO_ENCLOG_FUNC_CODE];
+
+		int token_table = mono_metadata_token_table (log_token);
+		int token_index = mono_metadata_token_index (log_token);
+
+		if (token_table == MONO_TABLE_ASSEMBLYREF) {
+			/* okay, supported */
+		} else if (token_table == MONO_TABLE_METHOD) {
+			/* handled above */
+		}
+
+		switch (func_code) {
+			case 0: /* default */
+				break;
+			default:
+				mono_error_set_type_load_name (error, NULL, image_base->name, "EnC: FuncCode %d (%s) not supported (token=0x%08x)", func_code, funccode_to_str (func_code), log_token);
+				return FALSE;
+		}
+	}
+	return TRUE;
+}
+
+/* do actuall enclog application */
+static gboolean
+apply_enclog_pass2 (MonoImage *image_base, MonoImage *image_dmeta, gconstpointer dil_data, uint32_t dil_length, MonoError *error)
 {
 	MonoTableInfo *table_enclog = &image_dmeta->tables [MONO_TABLE_ENCLOG];
 	int rows = table_enclog->rows;
@@ -454,11 +530,8 @@ apply_enclog (MonoImage *image_base, MonoImage *image_dmeta, gconstpointer dil_d
 		switch (func_code) {
 			case 0: /* default */
 				break;
-			case 1: /* add method */
-				// TODO: only static methods are supported, check that.
-				break;
 			default:
-				g_error ("EnC: FuncCode %d not supported (token=0x%08x)", func_code, log_token);
+				g_error ("EnC: unsupported FuncCode, should be caught by pass1");
 				break;
 		}
 
@@ -494,8 +567,7 @@ apply_enclog (MonoImage *image_base, MonoImage *image_dmeta, gconstpointer dil_d
 			g_free (old_array);
 		} else if (token_table == MONO_TABLE_METHOD) {
 			if (token_index > image_base->tables [token_table].rows) {
-				mono_error_set_type_load_name (error, NULL, image_base->name, "EnC: cannot add new method with token 0x%08x", log_token);
-				return FALSE;
+				g_error ("EnC: new method added, should be caught by pass1");
 			}
 
 			if (!image_base->method_table_delta_index)
@@ -588,6 +660,18 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, gconstpoin
 	MonoTableInfo *table_enclog = &image_dmeta->tables [MONO_TABLE_ENCLOG];
 	MonoTableInfo *table_encmap = &image_dmeta->tables [MONO_TABLE_ENCMAP];
 
+	if (!table_enclog->rows && !table_encmap->rows) {
+		mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "No enclog or encmap in delta image for base=%s, nothing to do", basename);
+		mono_metadata_update_cancel (generation);
+		return;
+	}
+
+	if (!apply_enclog_pass1 (image_base, image_dmeta, dil_bytes, dil_length, error)) {
+		mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "Error on sanity-checking delta image to base=%s, due to: %s", basename, mono_error_get_message (error));
+		mono_metadata_update_cancel (generation);
+		return;
+	}
+
 	/* if there are updates, start tracking the tables of the base image, if we weren't already. */
 	if (table_enclog->rows)
 		table_to_image_add (image_base);
@@ -609,18 +693,14 @@ mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, gconstpoin
 		append_heap (&image_base->heap_blob, &image_dmeta->heap_blob);
 		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base image blob heap addr (merged): %p", image_base->heap_blob.data);
 		mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE, "base image blob heap size (merged): 0x%08x", image_base->heap_blob.size);
+	} else {
+		g_error ("implement me for regular delta images");
 	}
 
 	if (mono_trace_is_traced (G_LOG_LEVEL_DEBUG, MONO_TRACE_METADATA_UPDATE))
 		dump_update_summary (image_base, image_dmeta);
 
-	if (!table_enclog->rows && !table_encmap->rows) {
-		mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "No enclog or encmap in delta image for base=%s, nothing to do", basename);
-		mono_metadata_update_cancel (generation);
-		return;
-	}
-
-	if (!apply_enclog (image_base, image_dmeta, dil_bytes, dil_length, error)) {
+	if (!apply_enclog_pass2 (image_base, image_dmeta, dil_bytes, dil_length, error)) {
 		mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "Error applying delta image to base=%s, due to: %s", basename, mono_error_get_message (error));
 		mono_metadata_update_cancel (generation);
 		return;
