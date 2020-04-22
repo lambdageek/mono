@@ -1007,7 +1007,7 @@ mono_metadata_table_bounds_check (MonoImage *image, int table_index, int token_i
 		list = list->next;
 		table = &dmeta->tables [table_index];
 		ridx = mono_image_relative_delta_index (dmeta, mono_metadata_make_token (table_index, token_index + 1)) - 1;
-	} while (ridx < 0 || ridx > table->rows);
+	} while (ridx < 0 || ridx >= table->rows);
 
 	return FALSE;
 }
