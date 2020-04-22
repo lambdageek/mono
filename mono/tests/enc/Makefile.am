@@ -6,6 +6,7 @@ TESTS_REGULAR := \
 	CallExisting.dll \
 	ReplaceMethod.dll \
 	ReplaceMethodOften.dll \
+	ReplacePrivateVirtualMethod.dll \
 	TypeTokenSwap.dll \
 	UserStringSwap.dll
 
