@@ -4,6 +4,7 @@ ROSLYNILDIFF ?=/Users/lewurm/work/roslynildiff/bin/Debug/roslynildiff.exe
 TESTS_REGULAR := \
 	AddStaticMethod.dll \
 	CallExisting.dll \
+	LambdaFunc.dll \
 	ReplaceMethod.dll \
 	ReplaceMethodOften.dll \
 	ReplacePrivateVirtualMethod.dll \
