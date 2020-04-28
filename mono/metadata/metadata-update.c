@@ -495,7 +495,13 @@ apply_enclog_pass1 (MonoImage *image_base, MonoImage *image_dmeta, gconstpointer
 			/* okay, supported */
 		} else if (token_table == MONO_TABLE_METHOD) {
 			/* handled above */
+		} else {
+			if (token_index <= image_base->tables [token_table].rows) {
+				mono_error_set_type_load_name (error, NULL, image_base->name, "EnC: we do not support patching of existing table cols. token=0x%08x", log_token);
+				return FALSE;
+			}
 		}
+
 
 		switch (func_code) {
 			case 0: /* default */
