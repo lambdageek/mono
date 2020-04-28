@@ -1,6 +1,11 @@
 include ../common_mixed.mk
 
 ROSLYNILDIFF ?=/Users/lewurm/work/roslynildiff/bin/Debug/roslynildiff.exe
+DISABLED_TESTS := \
+	AddClass.dll \
+	AddStaticField.dll \
+	LambdaFunc.dll
+
 TESTS_REGULAR := \
 	AddClass.dll \
 	AddStaticField.dll \
@@ -14,13 +19,15 @@ TESTS_REGULAR := \
 	TypeTokenSwap.dll \
 	UserStringSwap.dll
 
+TESTS_ACTUAL=$(filter-out $(DISABLED_TESTS),$(TESTS_REGULAR))
+
 # DEBUG_FLAGS=MONO_LOG_MASK=metadata-update MONO_LOG_LEVEL=debug MONO_VERBOSE_METHOD=DiffTestMethod1
 
 check: $(TESTS_REGULAR)
 	@failed=0; \
 	passed=0; \
 	failed_tests=""; \
-	for i in $(TESTS_REGULAR); do \
+	for i in $(TESTS_ACTUAL); do \
 		echo "======== $$i start ======== "; \
 		if $(DEBUG_FLAGS) ../../mini/mono $(TEST_RUNTIME_ARGS) --interp=-inline $$i ; \
 		then \
