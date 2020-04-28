@@ -7,6 +7,7 @@ TESTS_REGULAR := \
 	AddStaticMethod.dll \
 	CallExisting.dll \
 	LambdaFunc.dll \
+	OnStackMethod.dll \
 	ReplaceMethod.dll \
 	ReplaceMethodOften.dll \
 	ReplacePrivateVirtualMethod.dll \
