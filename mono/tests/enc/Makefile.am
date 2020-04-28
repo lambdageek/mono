@@ -2,6 +2,7 @@ include ../common_mixed.mk
 
 ROSLYNILDIFF ?=/Users/lewurm/work/roslynildiff/bin/Debug/roslynildiff.exe
 TESTS_REGULAR := \
+	AddClass.dll \
 	AddStaticMethod.dll \
 	CallExisting.dll \
 	LambdaFunc.dll \
