@@ -14,6 +14,7 @@ TESTS_REGULAR := \
 	LambdaFunc.dll \
 	OnStackMethod.dll \
 	OnStackMethodThread.dll \
+	OnStackMethodThreadThread.dll \
 	ReplaceMethod.dll \
 	ReplaceMethodOften.dll \
 	ReplacePrivateVirtualMethod.dll \
