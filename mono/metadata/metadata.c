@@ -2342,6 +2342,7 @@ mono_metadata_parse_method_signature_full (MonoImage *m, MonoGenericContainer *c
 	case MONO_CALL_STDCALL:
 	case MONO_CALL_THISCALL:
 	case MONO_CALL_FASTCALL:
+	case MONO_CALL_UNMANAGED:
 		method->pinvoke = 1;
 		break;
 	}
