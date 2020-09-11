@@ -25,13 +25,23 @@ TESTS_ACTUAL=$(filter-out $(DISABLED_TESTS),$(TESTS_REGULAR))
 
 # DEBUG_FLAGS=MONO_LOG_MASK=metadata-update MONO_LOG_LEVEL=debug MONO_VERBOSE_METHOD=DiffTestMethod1
 
-check: $(TESTS_REGULAR)
+TESTS_BASE_SRCS:= $(TESTS_REGULAR:.dll=.cs)
+
+TESTS_UPDATE_SRCS:= $(foreach b,$(basename $(TESTS_REGULAR)),$(wildcard $(b)_v?.cs))
+
+TESTS_SRCS:= $(TEST_BASE_SRCS) $(TEST_UPDATE_SRCS)
+
+EXTRA_DIST= $(TESTS_SRCS)
+
+.PHONY: names
+
+check-local: $(TESTS_REGULAR)
 	@failed=0; \
 	passed=0; \
 	failed_tests=""; \
 	for i in $(TESTS_ACTUAL); do \
 		echo "======== $$i start ======== "; \
-		if $(DEBUG_FLAGS) ../../mini/mono $(TEST_RUNTIME_ARGS) --interp=-inline $$i ; \
+		if $(DEBUG_FLAGS) $(RUNTIME) $(TEST_RUNTIME_ARGS) --interp=-inline $$i ; \
 		then \
 			passed=`expr $${passed} + 1`; \
 			echo "======== $$i end (passed) ======== "; \
@@ -44,9 +54,12 @@ check: $(TESTS_REGULAR)
 	echo "$${passed} test(s) passed. $${failed} test(s) did not pass."; \
 	exit $${failed}
 
+EXTRA_DIST+= EncHelper.cs
+
 EncHelper.dll: EncHelper.cs
 	$(MCS)  -target:library -out:$@ $<
 
 %.dll: %.cs EncHelper.dll
 	bash -x -c "mono --debug $(ROSLYNILDIFF) -l:EncHelper.dll $< $(basename $<)_v?.cs"
-	
+
+CLEANFILES += *.dll.*.dil *.dll.*.dmeta *.dll.*.dpdb
