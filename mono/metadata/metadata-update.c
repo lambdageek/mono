@@ -111,6 +111,8 @@ void
 mono_metadata_update_init (void)
 {
 	table_to_image_init ();
+	if (mono_get_runtime_callbacks ()->metadata_update_init)
+		mono_get_runtime_callbacks ()->metadata_update_init ();
 }
 
 

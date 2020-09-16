@@ -7850,6 +7850,12 @@ copy_imethod_for_frame (MonoDomain *domain, InterpFrame *frame)
 }
 
 static void
+interp_metadata_update_init (void)
+{
+	g_assertf ((mono_interp_opt & INTERP_OPT_INLINE) == 0, "Interpreter inlining must be turned off for metadata updates");
+}
+
+static void
 interp_invalidate_transformed (MonoDomain *domain)
 {
 	mono_gc_stop_world ();
