@@ -56,6 +56,14 @@ check-local: $(TESTS_REGULAR)
 
 EXTRA_DIST+= EncHelper.cs
 
+.PHONY: run-demo1 run-demo2
+
+run-demo1: UserStringSwap.dll
+	$(DEBUG_FLAGS) $(RUNTIME) $(TEST_RUNTIME_ARGS) --interp=-inline $<
+
+run-demo2: ReplaceMethodOften.dll
+	$(DEBUG_FLAGS) $(RUNTIME) $(TEST_RUNTIME_ARGS) --interp=-inline $<
+
 EncHelper.dll: EncHelper.cs
 	$(MCS)  -target:library -out:$@ $<
 
