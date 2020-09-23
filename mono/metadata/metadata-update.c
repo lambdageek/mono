@@ -100,10 +100,10 @@ mono_table_info_get_base_image (const MonoTableInfo *t)
 	return image;
 }
 
-MonoImage*
+static MonoImage*
 mono_image_open_dmeta_from_data (MonoImage *base_image, uint32_t generation, gconstpointer dmeta_bytes, uint32_t dmeta_length, MonoImageOpenStatus *status);
 
-void
+static void
 mono_image_append_delta (MonoImage *base, MonoImage *delta);
 
 
@@ -188,10 +188,12 @@ mono_metadata_update_cancel (uint32_t generation)
 	publish_unlock ();
 }
 
+/**
+ * LOCKING: Assumes the publish_lock is held
+ */
 void
 mono_image_append_delta (MonoImage *base, MonoImage *delta)
 {
-	/* FIXME: needs locking. Assumes one updater at a time */
 	if (!base->delta_image) {
 		base->delta_image = base->delta_image_last = g_slist_prepend (NULL, delta);
 		return;
@@ -200,6 +202,9 @@ mono_image_append_delta (MonoImage *base, MonoImage *delta)
 	base->delta_image_last = g_slist_append (base->delta_image_last, delta);
 }
 
+/**
+ * LOCKING: assumes the publish_lock is held
+ */
 MonoImage*
 mono_image_open_dmeta_from_data (MonoImage *base_image, uint32_t generation, gconstpointer dmeta_bytes, uint32_t dmeta_length, MonoImageOpenStatus *status)
 {
@@ -616,6 +621,10 @@ append_heap (MonoStreamHeader *base, MonoStreamHeader *appendix)
 	base->size = size;
 }
 
+/**
+ *
+ * LOCKING: Takes the publish_lock
+ */
 void
 mono_image_load_enc_delta (MonoDomain *domain, MonoImage *image_base, gconstpointer dmeta_bytes, uint32_t dmeta_length, gconstpointer dil_bytes, uint32_t dil_length, MonoError *error)
 {

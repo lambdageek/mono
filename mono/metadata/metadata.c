@@ -1000,6 +1000,7 @@ mono_metadata_table_bounds_check (MonoImage *image, int table_index, int token_i
 	MonoTableInfo *table;
 	int ridx;
 
+	/* FIXME: Only lookup upto the latest published image, not all images. */
 	do {
 		if (!list)
 			return TRUE;
