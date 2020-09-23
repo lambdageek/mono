@@ -41,7 +41,6 @@ public class Sample3 {
 		res = DiffTestMethod1 (3, 8);
 		if (res != 6)
 			return 6;
-		replacer.Update (assm);
 
 		return 0;
 	}
