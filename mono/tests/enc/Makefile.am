@@ -1,6 +1,6 @@
 include ../common_mixed.mk
 
-ROSLYNILDIFF ?=/Users/lewurm/work/roslynildiff/bin/Debug/roslynildiff.exe
+ROSLYNILDIFF ?=$(HOME)/work/roslynildiff/bin/Debug/roslynildiff.exe
 DISABLED_TESTS := \
 	AddClass.dll \
 	AddStaticField.dll \
