@@ -1,6 +1,15 @@
 include ../common_mixed.mk
 
-ROSLYNILDIFF ?=$(HOME)/work/roslynildiff/bin/Debug/roslynildiff.exe
+#ROSLYNILDIFF_KIND=Mono
+ROSLYNILDIFF_KIND=Net5
+
+ROSLYNILDIFF ?=$(HOME)/work/roslynildiff/bin/Debug/roslynildiff.$(if $(findstring Net5,$(ROSLYNILDIFF_KIND)),dll,exe)
+
+ROSLYNILDIFF_CMD =$(if $(findstring Mono,$(ROSLYNILDIFF_KIND)),mono --debug,dotnet)
+ROSLYNILDIFF_RUN =$(ROSLYNILDIFF_CMD) $(ROSLYNILDIFF)
+
+ROSLYNILDIFF_ARGS =$(if $(findstring Mono,$(ROSLYNILDIFF_KIND)),,-mono -bcl:$(CLASS))
+
 DISABLED_TESTS := \
 	AddClass.dll \
 	AddStaticField.dll \
@@ -68,6 +77,6 @@ EncHelper.dll: EncHelper.cs
 	$(MCS)  -target:library -out:$@ $<
 
 %.dll: %.cs EncHelper.dll
-	bash -x -c "mono --debug $(ROSLYNILDIFF) -l:EncHelper.dll $< $(basename $<)_v?.cs"
+	bash -x -c "$(ROSLYNILDIFF_RUN) $(ROSLYNILDIFF_ARGS) -l:EncHelper.dll $< $(basename $<)_v?.cs"
 
 CLEANFILES += *.dll.*.dil *.dll.*.dmeta *.dll.*.dpdb
