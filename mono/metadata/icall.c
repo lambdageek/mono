@@ -7599,6 +7599,12 @@ ves_icall_System_Environment_GetEnvironmentVariable_native (const gchar *utf8_na
 		return NULL_HANDLE_STRING;
 	
 	MonoStringHandle res = mono_string_new_handle (mono_domain_get (), value, error);
+
+	if (!is_ok (error)) {
+		g_warning ("Environment variable '%s' has value that could not be converted to UTF-8", utf8_name);
+		mono_dump_mem (value, strlen (value));
+	}
+
 	g_free (value);
 	return res;
 }
